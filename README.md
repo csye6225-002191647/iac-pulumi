@@ -3,7 +3,6 @@
 This GitHub repository is set up to manage the Infrastructure as Code (IaC) using Pulumi for creating and managing AWS networking resources. The infrastructure setup includes creating Virtual Private Cloud (VPC), subnets, route tables, and an Internet Gateway. This repository is intended for use in your AWS environment, allowing you to create multiple VPCs with varying configurations using Pulumi stacks.
 
 ## Repository Structure
-
 - `README.md` (This file): Provides an overview and instructions for setting up the infrastructure.
 - `.gitignore`: Contains a suitable .gitignore file for this project.
 - `pulumi/`: This directory contains the Pulumi project and code for managing AWS networking resources.
@@ -36,7 +35,7 @@ To set up the AWS networking infrastructure as described, follow these steps:
 
 ## Pulumi Stack Configuration
 
-To create multiple VPCs with different configurations, we have set up two Pulumi stacks: `dev`, `demo`. Each stack can be used to deploy the infrastructure in different AWS accounts or regions. To switch between stacks, use the following Pulumi commands:
+To create multiple VPCs with different configurations, we have set up two Pulumi stacks: `dev` and `demo`. Each stack can be used to deploy the infrastructure in different AWS accounts or regions. To switch between stacks, use the following Pulumi commands:
 
 - `pulumi stack select dev`: Switch to the development stack.
 - `pulumi stack select demo`: Switch to the demo stack.
@@ -45,7 +44,7 @@ Remember to set up Pulumi configurations for different AWS accounts and regions 
 
 ## Deploying the Pulumi Stacks
 
-To create the VPC and associated resources using Pulumi, you can use the following instructions for each of the three stacks (dev, demo).
+To create the VPC and associated resources using Pulumi, you can use the following instructions for each of the two stacks (dev and demo).
 
 ### For the `dev` Stack
 
@@ -87,7 +86,7 @@ Please review the changes and configurations before proceeding to create the res
 
 ## Destroying the VPC and Associated Resources
 
-To tear down the VPC and associated resources created with Pulumi, you can use the following instructions for each of the two stacks (dev, demo).
+To tear down the VPC and associated resources created with Pulumi, you can use the following instructions for each of the two stacks (dev and demo).
 
 ### For the `dev` Stack
 
@@ -134,9 +133,3 @@ This repository includes a `.gitignore` file to exclude common build, dependency
 For additional `.gitignore` templates and customization, refer to the [GitHub .gitignore Templates](https://github.com/github/gitignore) repository.
 
 **Please note:** Keep all sensitive information such as AWS access keys and secret keys secure and do not commit them to version control. Use AWS IAM roles or other secure methods for AWS access.
-
-## License
-
-This repository is provided under the [MIT License](LICENSE). Feel free to modify and distribute the code according to the terms of the license.
-
-For any questions or assistance, please contact the repository owner. Happy coding!
