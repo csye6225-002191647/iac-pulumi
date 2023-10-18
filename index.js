@@ -1,93 +1,187 @@
 const pulumi = require("@pulumi/pulumi");
 const aws = require("@pulumi/aws");
+const config = new pulumi.Config();
 
-// Create a VPC.
-const vpc = new aws.ec2.Vpc("vpc", {
-    cidrBlock: "10.0.0.0/16",
+// const selectedRegion = config.require("aws:region");
+const cidrBlock = config.require("cidrBlock");
+const stackName = pulumi.getStack();
+
+// Create a new VPC
+const vpc = new aws.ec2.Vpc(`${stackName}_VPC`, {
+  cidrBlock: cidrBlock,
+  tags: {
+    Name: `${stackName}_VPC`,
+  },
 });
 
-// Create an an internet gateway.
-const gateway = new aws.ec2.InternetGateway("gateway", {
-    vpcId: vpc.id,
-});
+const publicSubnets = [];
+const privateSubnets = [];
+let instance;
 
-// Create a subnet that automatically assigns new instances a public IP address.
-const subnet = new aws.ec2.Subnet("subnet", {
-    vpcId: vpc.id,
-    cidrBlock: "10.0.1.0/24",
-    mapPublicIpOnLaunch: true,
-});
+async function main() {
+  let availabilityZones = [];
 
-// Create a route table.
-const routes = new aws.ec2.RouteTable("routes", {
-    vpcId: vpc.id,
-    routes: [
-        {
-            cidrBlock: "0.0.0.0/0",
-            gatewayId: gateway.id,
+  // Create a public and private subnet in each availability zone
+  const azs = await aws.getAvailabilityZones({
+    state: "available", // You can filter by availability zone state if needed
+  });
+
+  if (azs.names.length >= 3) {
+    availabilityZones = azs.names.slice(0, 3);
+  } else {
+    availabilityZones = azs.names;
+  }
+
+  const ipAddress = cidrBlock.split("/")[0];
+  const address = ipAddress.split(".");
+  const concatIP = `${address[0]}.${address[1]}`;
+
+  availabilityZones.forEach((az, index) => {
+    const publicSubnet = new aws.ec2.Subnet(`Public-Subnet_0${index + 1}`, {
+      vpcId: vpc.id,
+      availabilityZone: az,
+      cidrBlock: `${concatIP}.${index}.0/24`, //ip address should not be hard coded here
+      mapPublicIpOnLaunch: true,
+      tags: {
+        Name: `Public-Subnet_0${index + 1}`,
+      },
+    });
+    publicSubnets.push(publicSubnet);
+
+    const privateSubnet = new aws.ec2.Subnet(`Private-Subnet_0${index + 1}`, {
+      vpcId: vpc.id,
+      availabilityZone: az,
+      cidrBlock: `${concatIP}.${index + 3}.0/24`,
+      tags: {
+        Name: `Private-Subnet_0${index + 1}`,
+      },
+    });
+    privateSubnets.push(privateSubnet);
+  });
+
+  // Create an Internet Gateway and attach it to the VPC
+  const internetGateway = await new aws.ec2.InternetGateway(
+    `${stackName}_Internet-Gateway`,
+    {
+      vpcId: vpc.id,
+      tags: {
+        Name: `${stackName}_Internet-Gateway`,
+      },
+    }
+  );
+
+  // Create public and private route tables
+  const publicRouteTable = await new aws.ec2.RouteTable(
+    `${stackName}_Public-Route-Table`,
+    {
+      vpcId: vpc.id,
+      tags: {
+        Name: `${stackName}_Public-Route-Table`,
+      },
+    }
+  );
+
+  const privateRouteTable = await new aws.ec2.RouteTable(
+    `${stackName}_Private-Route-Table`,
+    {
+      vpcId: vpc.id,
+      tags: {
+        Name: `${stackName}_Private-Route-Table`,
+      },
+    }
+  );
+
+  // Create a route in the public route table to the Internet Gateway
+  new aws.ec2.Route(`${stackName}_Public-Route`, {
+    routeTableId: publicRouteTable.id,
+    destinationCidrBlock: "0.0.0.0/0",
+    gatewayId: internetGateway.id,
+    tags: {
+      Name: `${stackName}_Public-Route`,
+    },
+  });
+
+  // Associate public and private subnets with their respective route tables
+  publicSubnets.forEach((subnet, index) => {
+    new aws.ec2.RouteTableAssociation(
+      `${stackName}_publicRTAssociation_0${index + 1}`,
+      {
+        subnetId: subnet.id,
+        routeTableId: publicRouteTable.id,
+        tags: {
+          Name: `${stackName}_publicRTAssociation_0${index + 1}`,
         },
-    ],
-});
+      }
+    );
+  });
 
-// Associate the route table with the public subnet.
-const routeTableAssociation = new aws.ec2.RouteTableAssociation("route-table-association", {
-    subnetId: subnet.id,
-    routeTableId: routes.id,
-});
+  privateSubnets.forEach((subnet, index) => {
+    new aws.ec2.RouteTableAssociation(
+      `${stackName}_privateRTAssociation_0${index + 1}`,
+      {
+        subnetId: subnet.id,
+        routeTableId: privateRouteTable.id,
+        tags: {
+          Name: `${stackName}_privateRTAssociation_0${index + 1}`,
+        },
+      }
+    );
+  });
 
-// Create a security group allowing inbound access over port 80 and outbound
-// access to anywhere.
-const applicationSecurityGroup = new awsx.ec2.SecurityGroup("appSecurityGroup", {
-        vpc: vpc.id,
-        egress: [{ fromPort: 0, toPort: 0, protocol: "-1", cidrBlocks: ["0.0.0.0/0"] }],
-        ingress: [
-            {
-                protocol: "tcp",
-                fromPort: 22,
-                toPort: 22,
-                cidrBlocks: ["0.0.0.0/0"],
-            },
-            {
-                protocol: "tcp",
-                fromPort: 80,
-                toPort: 80,
-                cidrBlocks: ["0.0.0.0/0"],
-            },
-            {
-                protocol: "tcp",
-                fromPort: 443,
-                toPort: 443,
-                cidrBlocks: ["0.0.0.0/0"],
-            },
-            {
-                protocol: "tcp",
-                fromPort: 8080, 
-                toPort: 8080, 
-                cidrBlocks: ["0.0.0.0/0"],
-            },
-        ],
+  // Create a security group allowing inbound access over port 80 and outbound
+  // access to anywhere.
+  const applicationSecurityGroup = await new aws.ec2.SecurityGroup(
+    "appSecurityGroup",
+    {
+      vpcId: vpc.id,
+      egress: [
+        { fromPort: 0, toPort: 0, protocol: "-1", cidrBlocks: ["0.0.0.0/0"] },
+      ],
+      ingress: [
+        {
+          protocol: "tcp",
+          fromPort: 22,
+          toPort: 22,
+          cidrBlocks: ["0.0.0.0/0"],
+        },
+        {
+          protocol: "tcp",
+          fromPort: 80,
+          toPort: 80,
+          cidrBlocks: ["0.0.0.0/0"],
+        },
+        {
+          protocol: "tcp",
+          fromPort: 443,
+          toPort: 443,
+          cidrBlocks: ["0.0.0.0/0"],
+        },
+        {
+          protocol: "tcp",
+          fromPort: 8080,
+          toPort: 8080,
+          cidrBlocks: ["0.0.0.0/0"],
+        },
+      ],
+    }
+  );
 
-});
+  // Find the latest AMI.
+  const ami = await pulumi.output(
+    aws.ec2.getAmi({
+      owners: ["392319571849"],
+      mostRecent: true,
+    })
+  );
 
-// Find the latest Amazon Linux 2 AMI.
-const ami = pulumi.output(aws.ec2.getAmi({
-    owners: [ "amazon" ],
-    mostRecent: true,
-    filters: [
-        { name: "description", values: [ "Amazon Linux 2 *" ] },
-    ],
-}));
+  console.log(ami.id, "ami");
 
-console.log(ami, "ami");
-
-// Create and launch an Amazon Linux EC2 instance into the public subnet.
-const instance = new aws.ec2.Instance("instance", {
+  // Create and launch an Amazon Linux EC2 instance into the public subnet.
+  instance = await new aws.ec2.Instance("instance", {
     ami: ami.id,
     instanceType: "t2.micro",
-    subnetId: subnet.id,
-    vpcSecurityGroupIds: [
-        applicationSecurityGroup.id,
-    ],
+    subnetId: publicSubnets[0].id,
+    vpcSecurityGroupIds: [applicationSecurityGroup.id],
     userData: `
         #!/bin/bash
         amazon-linux-extras install nginx1
@@ -95,9 +189,7 @@ const instance = new aws.ec2.Instance("instance", {
         systemctl enable nginx
         systemctl start nginx
     `,
-});
+  });
+}
 
-// Export the instance's publicly accessible URL.
-module.exports = {
-    instanceURL: pulumi.interpolate `http://${instance.publicIp}`,
-};
+main();
