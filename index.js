@@ -2,10 +2,9 @@ const pulumi = require("@pulumi/pulumi");
 const aws = require("@pulumi/aws");
 const config = new pulumi.Config();
 
-// const selectedRegion = config.require("aws:region");
 const cidrBlock = config.require("cidrBlock");
 const devKeyName = config.require("keyName");
-const ingressRules = config.require("ingressRules");
+const ingressRules = config.getObject("ingressRules");
 const stackName = pulumi.getStack();
 
 // Create a new VPC

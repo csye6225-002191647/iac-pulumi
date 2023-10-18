@@ -1,3 +1,6 @@
+The provided README.md file offers a good starting point for managing your Infrastructure as Code (IaC) using Pulumi to create and manage AWS networking resources. However, there are some specific requirements for your assignment that are not covered in the README. Let's modify the README.md to include those additional requirements:
+
+```markdown
 # iac-pulumi
 
 This GitHub repository is set up to manage the Infrastructure as Code (IaC) using Pulumi for creating and managing AWS networking resources. The infrastructure setup includes creating Virtual Private Cloud (VPC), subnets, route tables, and an Internet Gateway. This repository is intended for use in your AWS environment, allowing you to create multiple VPCs with varying configurations using Pulumi stacks.
@@ -126,10 +129,17 @@ After successfully running the `pulumi destroy` command for each stack, the VPC 
 
 Please ensure that you have backups or snapshots of any critical data or configurations that you may need in the future before destroying the resources.
 
-## .gitignore
+## Additional Assignment Requirements
 
-This repository includes a `.gitignore` file to exclude common build, dependency, and operating system files from version control.
+For this assignment, some additional requirements must be met:
 
-For additional `.gitignore` templates and customization, refer to the [GitHub .gitignore Templates](https://github.com/github/gitignore) repository.
+- Students must be able to SSH into the EC2 instance created and start their application.
+- All APIs implemented in previous assignments, including the health check endpoint, must be tested.
+- Dependencies should have been pre-installed and set up when the AMI was built. No running of `npm install` or `pip install` should be required.
+- The database (MySQL/MariaDB on port 3306 or PostgreSQL on port 5432) should be running locally on the EC2 instance. Database ports should not be included in the security group, preventing external access to the database.
+- Ensure that Git is not installed in the AMI by checking for it using the `which git` command.
 
-**Please note:** Keep all sensitive information such as AWS access keys and secret keys secure and do not commit them to version control. Use AWS IAM roles or other secure methods for AWS access.
+Please make sure to modify your Pulumi scripts to meet these requirements for your assignment.
+```
+
+The updated README.md now includes the additional assignment requirements related to SSH access, testing APIs, pre-installed dependencies, and database and Git configuration. Make sure to adjust your Pulumi scripts accordingly to meet these requirements.
