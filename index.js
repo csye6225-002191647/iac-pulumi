@@ -4,6 +4,7 @@ const config = new pulumi.Config();
 
 // const selectedRegion = config.require("aws:region");
 const cidrBlock = config.require("cidrBlock");
+const devKeyName = config.require("keyName");
 const stackName = pulumi.getStack();
 
 // Create a new VPC
@@ -34,13 +35,12 @@ async function main() {
 
   const ipAddress = cidrBlock.split("/")[0];
   const address = ipAddress.split(".");
-  const subnetMask = parseInt(cidrBlock.split("/")[1]) + 8;
 
   availabilityZones.forEach((az, index) => {
     const publicSubnet = new aws.ec2.Subnet(`Public-Subnet_0${index + 1}`, {
       vpcId: vpc.id,
       availabilityZone: az,
-      cidrBlock: `${address[0]}.${address[1]}.${index}.${address[3]}/${subnetMask}`, //ip address should not be hard coded here
+      cidrBlock: `${address[0]}.${address[1]}.${index}.${address[3]}/24`, //ip address should not be hard coded here
       mapPublicIpOnLaunch: true,
       tags: {
         Name: `Public-Subnet_0${index + 1}`,
@@ -51,7 +51,7 @@ async function main() {
     const privateSubnet = new aws.ec2.Subnet(`Private-Subnet_0${index + 1}`, {
       vpcId: vpc.id,
       availabilityZone: az,
-      cidrBlock: `${address[0]}.${address[1]}.${index + 3}.${address[3]}/${subnetMask}`,
+      cidrBlock: `${address[0]}.${address[1]}.${index + 3}.${address[3]}/24`,
       tags: {
         Name: `Private-Subnet_0${index + 1}`,
       },
@@ -180,7 +180,7 @@ async function main() {
     instanceType: "t2.micro",
     subnetId: publicSubnets[0].id,
     vpcSecurityGroupIds: [applicationSecurityGroup.id],
-    keyName: "csye6225",
+    keyName: devKeyName,
     userData: `
         #!/bin/bash
         amazon-linux-extras install nginx1
