@@ -34,13 +34,13 @@ async function main() {
 
   const ipAddress = cidrBlock.split("/")[0];
   const address = ipAddress.split(".");
-  const concatIP = `${address[0]}.${address[1]}`;
+  const subnetMask = parseInt(cidrBlock.split("/")[1]) + 8;
 
   availabilityZones.forEach((az, index) => {
     const publicSubnet = new aws.ec2.Subnet(`Public-Subnet_0${index + 1}`, {
       vpcId: vpc.id,
       availabilityZone: az,
-      cidrBlock: `${concatIP}.${index}.0/24`, //ip address should not be hard coded here
+      cidrBlock: `${address[0]}.${address[1]}.${index}.${address[3]}/${subnetMask}`, //ip address should not be hard coded here
       mapPublicIpOnLaunch: true,
       tags: {
         Name: `Public-Subnet_0${index + 1}`,
@@ -51,7 +51,7 @@ async function main() {
     const privateSubnet = new aws.ec2.Subnet(`Private-Subnet_0${index + 1}`, {
       vpcId: vpc.id,
       availabilityZone: az,
-      cidrBlock: `${concatIP}.${index + 3}.0/24`,
+      cidrBlock: `${address[0]}.${address[1]}.${index + 3}.${address[3]}/${subnetMask}`,
       tags: {
         Name: `Private-Subnet_0${index + 1}`,
       },
@@ -174,14 +174,13 @@ async function main() {
     })
   );
 
-  console.log(ami.id, "ami");
-
   // Create and launch an Amazon Linux EC2 instance into the public subnet.
   instance = await new aws.ec2.Instance("instance", {
     ami: ami.id,
     instanceType: "t2.micro",
     subnetId: publicSubnets[0].id,
     vpcSecurityGroupIds: [applicationSecurityGroup.id],
+    keyName: "csye6225",
     userData: `
         #!/bin/bash
         amazon-linux-extras install nginx1
