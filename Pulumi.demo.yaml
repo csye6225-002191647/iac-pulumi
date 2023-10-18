@@ -1,5 +1,5 @@
 config:
   aws:profile: demo
-  aws:region: us-east-1
+  aws:region: us-west-2
   cidrBlock: 10.0.0.0/16
-  keyName: dev_csye6225
+  keyName: demo_csye6225_us-west-2
