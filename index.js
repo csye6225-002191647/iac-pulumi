@@ -5,6 +5,7 @@ const config = new pulumi.Config();
 // const selectedRegion = config.require("aws:region");
 const cidrBlock = config.require("cidrBlock");
 const devKeyName = config.require("keyName");
+const ingressRules = config.require("ingressRules");
 const stackName = pulumi.getStack();
 
 // Create a new VPC
@@ -137,34 +138,8 @@ async function main() {
       egress: [
         { fromPort: 0, toPort: 0, protocol: "-1", cidrBlocks: ["0.0.0.0/0"] },
       ],
-      ingress: [
-        {
-          protocol: "tcp",
-          fromPort: 22,
-          toPort: 22,
-          cidrBlocks: ["0.0.0.0/0"],
-        },
-        {
-          protocol: "tcp",
-          fromPort: 80,
-          toPort: 80,
-          cidrBlocks: ["0.0.0.0/0"],
-        },
-        {
-          protocol: "tcp",
-          fromPort: 443,
-          toPort: 443,
-          cidrBlocks: ["0.0.0.0/0"],
-        },
-        {
-          protocol: "tcp",
-          fromPort: 8080,
-          toPort: 8080,
-          cidrBlocks: ["0.0.0.0/0"],
-        },
-      ],
-    }
-  );
+      ingress: ingressRules,
+    });
 
   // Find the latest AMI.
   const ami = await pulumi.output(

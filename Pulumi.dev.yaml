@@ -3,3 +3,28 @@ config:
   aws:region: us-west-2
   cidrBlock: 10.0.0.0/16
   keyName: dev_csye6225_us-west-2
+
+  ingressRules:
+    - protocol: "tcp"
+      fromPort: 22
+      toPort: 22
+      cidrBlocks:
+        - "0.0.0.0/0"
+
+    - protocol: "tcp"
+      fromPort: 80
+      toPort: 80
+      cidrBlocks:
+        - "0.0.0.0/0"
+
+    - protocol: "tcp"
+      fromPort: 443
+      toPort: 443
+      cidrBlocks:
+        - "0.0.0.0/0"
+
+    - protocol: "tcp"
+      fromPort: 8080
+      toPort: 8080
+      cidrBlocks:
+        - "0.0.0.0/0"
