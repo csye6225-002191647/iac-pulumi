@@ -3,6 +3,7 @@ config:
   aws:region: us-west-2
   cidrBlock: 10.0.0.0/16
   keyName: dev_csye6225_us-west-2
+  subnetMask: 24
 
   ingressRules:
     - protocol: "tcp"

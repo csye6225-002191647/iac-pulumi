@@ -4,6 +4,7 @@ const config = new pulumi.Config();
 
 const cidrBlock = config.require("cidrBlock");
 const devKeyName = config.require("keyName");
+const subnetMask = config.require("subnetMask");
 const ingressRules = config.getObject("ingressRules");
 const stackName = pulumi.getStack();
 
@@ -40,7 +41,7 @@ async function main() {
     const publicSubnet = new aws.ec2.Subnet(`Public-Subnet_0${index + 1}`, {
       vpcId: vpc.id,
       availabilityZone: az,
-      cidrBlock: `${address[0]}.${address[1]}.${index}.${address[3]}/24`, //ip address should not be hard coded here
+      cidrBlock: `${address[0]}.${address[1]}.${index}.${address[3]}/${subnetMask}`, //ip address should not be hard coded here
       mapPublicIpOnLaunch: true,
       tags: {
         Name: `Public-Subnet_0${index + 1}`,
@@ -51,7 +52,7 @@ async function main() {
     const privateSubnet = new aws.ec2.Subnet(`Private-Subnet_0${index + 1}`, {
       vpcId: vpc.id,
       availabilityZone: az,
-      cidrBlock: `${address[0]}.${address[1]}.${index + 3}.${address[3]}/24`,
+      cidrBlock: `${address[0]}.${address[1]}.${index + 3}.${address[3]}/${subnetMask}`,
       tags: {
         Name: `Private-Subnet_0${index + 1}`,
       },
