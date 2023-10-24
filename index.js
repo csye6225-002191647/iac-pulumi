@@ -3,9 +3,10 @@ const aws = require("@pulumi/aws");
 const config = new pulumi.Config();
 
 const cidrBlock = config.require("cidrBlock");
-const devKeyName = config.require("keyName");
+const keyName = config.require("keyName");
 const subnetMask = config.require("subnetMask");
 const ingressRules = config.getObject("ingressRules");
+const dbIngressRules = config.getObject("dbIngressRules");
 const stackName = pulumi.getStack();
 
 // Create a new VPC
@@ -18,7 +19,6 @@ const vpc = new aws.ec2.Vpc(`${stackName}_VPC`, {
 
 const publicSubnets = [];
 const privateSubnets = [];
-let instance;
 
 async function main() {
   let availabilityZones = [];
@@ -61,7 +61,7 @@ async function main() {
   });
 
   // Create an Internet Gateway and attach it to the VPC
-  const internetGateway = await new aws.ec2.InternetGateway(
+  const internetGateway = new aws.ec2.InternetGateway(
     `${stackName}_Internet-Gateway`,
     {
       vpcId: vpc.id,
@@ -72,7 +72,7 @@ async function main() {
   );
 
   // Create public and private route tables
-  const publicRouteTable = await new aws.ec2.RouteTable(
+  const publicRouteTable = new aws.ec2.RouteTable(
     `${stackName}_Public-Route-Table`,
     {
       vpcId: vpc.id,
@@ -82,7 +82,7 @@ async function main() {
     }
   );
 
-  const privateRouteTable = await new aws.ec2.RouteTable(
+  const privateRouteTable = new aws.ec2.RouteTable(
     `${stackName}_Private-Route-Table`,
     {
       vpcId: vpc.id,
@@ -129,9 +129,16 @@ async function main() {
     );
   });
 
+  const privateSubnetsGroup = new aws.rds.SubnetGroup("private_subnets_group", {
+    subnetIds: privateSubnets.filter((subnet) => subnet.id),
+    tags: {
+        Name: "Private Subnets Group",
+    },
+});
+
   // Create a security group allowing inbound access over port 80 and outbound
   // access to anywhere.
-  const applicationSecurityGroup = await new aws.ec2.SecurityGroup(
+  const applicationSecurityGroup = new aws.ec2.SecurityGroup(
     "appSecurityGroup",
     {
       vpcId: vpc.id,
@@ -139,10 +146,76 @@ async function main() {
         { fromPort: 0, toPort: 0, protocol: "-1", cidrBlocks: ["0.0.0.0/0"] },
       ],
       ingress: ingressRules,
-    });
+    }
+  );
+
+  // Create a DB security group
+  const databaseSecurityGroup = new aws.ec2.SecurityGroup(
+    "databaseSecurityGroup",
+    {
+      description: "DB Security Group for RDS",
+      vpcId: vpc.id,
+      egress: [
+        { fromPort: 0, toPort: 0, protocol: "-1", cidrBlocks: ["0.0.0.0/0"] },
+      ],
+      ingress: dbIngressRules,
+      source_security_group_id: applicationSecurityGroup.id
+    }
+  )
+
+  // Step 2: Create RDS Parameter Group
+  const dbParameterGroup = new aws.rds.ParameterGroup("db-parameter-group", {
+    family: "postgres12",
+    parameters: [
+      {
+        name: "client_encoding",
+        value: "UTF8"
+      }
+    ],
+  });
+
+  // Step 3: Create RDS Instance
+  // If you want to specify "Multi-AZ deployment: No" when creating your RDS instance in the Pulumi code,
+  // you can simply omit the availabilityZone and backupRetentionPeriod properties. 
+  // creating the RDS instance with "Multi-AZ deployment: No"
+  const dbInstance = new aws.rds.Instance("db-instance", {
+    instanceClass: "db.t2.micro", // Use the cheapest one
+    allocatedStorage: 20,
+    // backupRetentionPeriod: 7,
+    dbSubnetGroupName: privateSubnetsGroup.name,
+    engine: "postgres", // Use "postgres" for PostgreSQL
+    engineVersion: 12,
+    name: "postgres", // DB instance Identifier
+    username: "postgres",
+    password: "postgres",
+    skipFinalSnapshot: true,
+    publiclyAccessible: false,
+    vpcSecurityGroupIds: [databaseSecurityGroup.id],
+    parameterGroupName: dbParameterGroup.name
+  });
+
+  console.log(dbInstance);
+
+  // Step 4: User Data
+  const userDataScript = pulumi.all([dbInstance.address, dbInstance.username, dbInstance.password]).apply(
+    values => 
+    `#!/bin/bash
+    cd /home/admin
+    rm -rf .env
+    touch .env
+    echo "HOSTNAME=${values[0]}">> .env
+    echo "DBUSER=${values[1]}">> .env
+    echo "DBPASSWORD=${values[2]}">> .env
+    echo "DBPORT=5432">> .env
+    echo "DATABASE=postgres">> .env
+    echo "ENVIRONMENT=DEV">> .env
+    echo "PORT=8080">> .env
+    source ./.env
+    `
+);
 
   // Find the latest AMI.
-  const ami = await pulumi.output(
+  const ami = pulumi.output(
     aws.ec2.getAmi({
       owners: ["392319571849"],
       mostRecent: true,
@@ -150,19 +223,13 @@ async function main() {
   );
 
   // Create and launch an Amazon Linux EC2 instance into the public subnet.
-  instance = await new aws.ec2.Instance("instance", {
+  const instance = new aws.ec2.Instance("instance", {
     ami: ami.id,
     instanceType: "t2.micro",
     subnetId: publicSubnets[0].id,
     vpcSecurityGroupIds: [applicationSecurityGroup.id],
-    keyName: devKeyName,
-    userData: `
-        #!/bin/bash
-        amazon-linux-extras install nginx1
-        amazon-linux-extras enable nginx
-        systemctl enable nginx
-        systemctl start nginx
-    `,
+    keyName: keyName,
+    userData: userDataScript
   });
 }
 
