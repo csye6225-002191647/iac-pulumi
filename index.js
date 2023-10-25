@@ -46,7 +46,8 @@ async function main() {
       tags: {
         Name: `Public-Subnet_0${index + 1}`,
       },
-    });
+    },
+    {dependsOn: [vpc]});
     publicSubnets.push(publicSubnet);
 
     const privateSubnet = new aws.ec2.Subnet(`Private-Subnet_0${index + 1}`, {
@@ -56,7 +57,8 @@ async function main() {
       tags: {
         Name: `Private-Subnet_0${index + 1}`,
       },
-    });
+    },
+    {dependsOn: [vpc]});
     privateSubnets.push(privateSubnet);
   });
 
@@ -68,7 +70,8 @@ async function main() {
       tags: {
         Name: `${stackName}_Internet-Gateway`,
       },
-    }
+    },
+    {dependsOn: [vpc]}
   );
 
   // Create public and private route tables
@@ -79,7 +82,8 @@ async function main() {
       tags: {
         Name: `${stackName}_Public-Route-Table`,
       },
-    }
+    },
+    {dependsOn: [vpc]}
   );
 
   const privateRouteTable = new aws.ec2.RouteTable(
@@ -89,7 +93,8 @@ async function main() {
       tags: {
         Name: `${stackName}_Private-Route-Table`,
       },
-    }
+    },
+    {dependsOn: [vpc]}
   );
 
   // Create a route in the public route table to the Internet Gateway
@@ -100,6 +105,8 @@ async function main() {
     tags: {
       Name: `${stackName}_Public-Route`,
     },
+  }, {
+    dependsOn: [publicRouteTable, internetGateway]
   });
 
   // Associate public and private subnets with their respective route tables
@@ -112,7 +119,8 @@ async function main() {
         tags: {
           Name: `${stackName}_publicRTAssociation_0${index + 1}`,
         },
-      }
+      },
+      {dependsOn:[publicRouteTable]}
     );
   });
 
@@ -125,7 +133,8 @@ async function main() {
         tags: {
           Name: `${stackName}_privateRTAssociation_0${index + 1}`,
         },
-      }
+      },
+      {dependsOn:[privateRouteTable]}
     );
   });
 
@@ -146,7 +155,8 @@ async function main() {
         { fromPort: 0, toPort: 0, protocol: "-1", cidrBlocks: ["0.0.0.0/0"] },
       ],
       ingress: ingressRules,
-    }
+    },
+    {dependsOn: [vpc]}
   );
 
   // Create a DB security group
@@ -160,7 +170,8 @@ async function main() {
       ],
       ingress: dbIngressRules,
       source_security_group_id: applicationSecurityGroup.id
-    }
+    },
+    {dependsOn: [vpc, applicationSecurityGroup ]}
   )
 
   // Step 2: Create RDS Parameter Group
@@ -185,32 +196,34 @@ async function main() {
     dbSubnetGroupName: privateSubnetsGroup.name,
     engine: "postgres", // Use "postgres" for PostgreSQL
     engineVersion: 12,
-    name: "postgres", // DB instance Identifier
+    // name: "postgres", // DB instance Identifier
+    dbName: "csye6225",
+    identifier: 'csye6225',
     username: "postgres",
     password: "postgres",
     skipFinalSnapshot: true,
     publiclyAccessible: false,
     vpcSecurityGroupIds: [databaseSecurityGroup.id],
-    parameterGroupName: dbParameterGroup.name
-  });
-
-  console.log(dbInstance);
+    parameterGroupName: dbParameterGroup.name,
+    userDataReplaceOnChange: true
+  },
+  {dependsOn: [privateSubnetsGroup, databaseSecurityGroup, dbParameterGroup]});
 
   // Step 4: User Data
   const userDataScript = pulumi.all([dbInstance.address, dbInstance.username, dbInstance.password]).apply(
     values => 
     `#!/bin/bash
-    cd /home/admin
-    rm -rf .env
-    touch .env
-    echo "HOSTNAME=${values[0]}">> .env
-    echo "DBUSER=${values[1]}">> .env
-    echo "DBPASSWORD=${values[2]}">> .env
-    echo "DBPORT=5432">> .env
-    echo "DATABASE=postgres">> .env
-    echo "ENVIRONMENT=DEV">> .env
-    echo "PORT=8080">> .env
-    source ./.env
+    cd /opt/csye6225/webapp
+    sudo rm -rf .env
+    sudo touch .env
+    sudo echo "HOSTNAME=${values[0]}">> /opt/csye6225/webapp.env
+    sudo echo "DBUSER=${values[1]}">> /opt/csye6225/webapp.env
+    sudo echo "DBPASSWORD=${values[2]}">> /opt/csye6225/webapp.env
+    sudo echo "DBPORT=5432">> /opt/csye6225/webapp.env
+    sudo echo "DATABASE=postgres">> /opt/csye6225/webapp.env
+    sudo echo "ENVIRONMENT=DEV">> /opt/csye6225/webapp.env
+    sudo echo "PORT=8080">> /opt/csye6225/webapp.env
+    source /opt/csye6225/webapp/.env
     `
 );
 
@@ -230,7 +243,8 @@ async function main() {
     vpcSecurityGroupIds: [applicationSecurityGroup.id],
     keyName: keyName,
     userData: userDataScript
-  });
+  },
+  {dependsOn: [applicationSecurityGroup]});
 }
 
 main();
