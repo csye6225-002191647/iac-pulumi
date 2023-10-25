@@ -4,7 +4,20 @@ config:
   cidrBlock: 10.0.0.0/16
   keyName: demo_csye6225_us-west-2
   subnetMask: 24
-  
+  instanceClass: db.t2.micro
+  allocatedStorage: 20
+  engine: postgres
+  engineVersion: 12
+  dbName: csye6225
+  dbInstanceIndentifier: csye6225
+  dbInstanceUsername: csye6225
+  dbInstancePassword: postgres
+  dbParameterGroupFamily: postgres12
+  amiOwners: 392319571849
+  instanceType: t2.micro
+  ENVIRONMENT: DEMO
+  port: 8080
+
   ingressRules:
     - protocol: "tcp"
       fromPort: 22

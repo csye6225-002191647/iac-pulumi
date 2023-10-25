@@ -2,6 +2,7 @@
     "name": "iac-pulumi",
     "main": "index.js",
     "dependencies": {
+        "@aws-sdk/client-secrets-manager": "^3.436.0",
         "@pulumi/aws": "^5.0.0",
         "@pulumi/awsx": "^1.0.0",
         "@pulumi/pulumi": "^3.0.0",

@@ -7,6 +7,19 @@ const keyName = config.require("keyName");
 const subnetMask = config.require("subnetMask");
 const ingressRules = config.getObject("ingressRules");
 const dbIngressRules = config.getObject("dbIngressRules");
+const instanceClass = config.require("instanceClass");
+const engine = config.require("engine");
+const allocatedStorage = config.require("allocatedStorage");
+const engineVersion = config.require("engineVersion");
+const dbName = config.require("dbName");
+const dbInstanceIdentifier = config.require("dbInstanceIndentifier");
+const dbInstanceUsername = config.require("dbInstanceUsername");
+const dbParameterGroupFamily = config.require("dbParameterGroupFamily");
+const amiOwnersString = config.require("amiOwners");
+const instanceType = config.require("instanceType");
+const ENVIRONMENT = config.require("ENVIRONMENT");
+const port = config.require("port");
+const dbInstancePassword= config.require("dbInstancePassword");
 const stackName = pulumi.getStack();
 
 // Create a new VPC
@@ -176,7 +189,7 @@ async function main() {
 
   // Step 2: Create RDS Parameter Group
   const dbParameterGroup = new aws.rds.ParameterGroup("db-parameter-group", {
-    family: "postgres12",
+    family: dbParameterGroupFamily,
     parameters: [
       {
         name: "client_encoding",
@@ -190,17 +203,17 @@ async function main() {
   // you can simply omit the availabilityZone and backupRetentionPeriod properties. 
   // creating the RDS instance with "Multi-AZ deployment: No"
   const dbInstance = new aws.rds.Instance("db-instance", {
-    instanceClass: "db.t2.micro", // Use the cheapest one
-    allocatedStorage: 20,
+    instanceClass: instanceClass, // Use the cheapest one
+    allocatedStorage: allocatedStorage,
     // backupRetentionPeriod: 7,
     dbSubnetGroupName: privateSubnetsGroup.name,
-    engine: "postgres", // Use "postgres" for PostgreSQL
-    engineVersion: 12,
+    engine: engine, // Use "postgres" for PostgreSQL
+    engineVersion: engineVersion,
     // name: "postgres", // DB instance Identifier
-    dbName: "csye6225",
-    identifier: 'csye6225',
-    username: "postgres",
-    password: "postgres",
+    dbName: dbName,
+    identifier: dbInstanceIdentifier,
+    username: dbInstanceUsername,
+    password: dbInstancePassword,
     skipFinalSnapshot: true,
     publiclyAccessible: false,
     vpcSecurityGroupIds: [databaseSecurityGroup.id],
@@ -210,7 +223,7 @@ async function main() {
   {dependsOn: [privateSubnetsGroup, databaseSecurityGroup, dbParameterGroup]});
 
   // Step 4: User Data
-  const userDataScript = pulumi.all([dbInstance.address, dbInstance.username, dbInstance.password]).apply(
+  const userDataScript = pulumi.all([dbInstance.address, dbInstance.username, dbInstance.password, dbInstance.dbName, dbInstance.port]).apply(
     values => 
     `#!/bin/bash
     cd /opt/csye6225/webapp
@@ -219,18 +232,19 @@ async function main() {
     sudo echo "HOSTNAME=${values[0]}">> /opt/csye6225/webapp.env
     sudo echo "DBUSER=${values[1]}">> /opt/csye6225/webapp.env
     sudo echo "DBPASSWORD=${values[2]}">> /opt/csye6225/webapp.env
-    sudo echo "DBPORT=5432">> /opt/csye6225/webapp.env
-    sudo echo "DATABASE=postgres">> /opt/csye6225/webapp.env
-    sudo echo "ENVIRONMENT=DEV">> /opt/csye6225/webapp.env
-    sudo echo "PORT=8080">> /opt/csye6225/webapp.env
+    sudo echo "DATABASE=${values[3]}">> /opt/csye6225/webapp.env
+    sudo echo "DBPORT=${values[4]}">> /opt/csye6225/webapp.env
+    sudo echo "ENVIRONMENT=${ENVIRONMENT}">> /opt/csye6225/webapp.env
+    sudo echo "PORT=${port}">> /opt/csye6225/webapp.env
     source /opt/csye6225/webapp/.env
     `
 );
 
   // Find the latest AMI.
+  const amiOwnersList = amiOwnersString.split().map(owner => owner.trim());
   const ami = pulumi.output(
     aws.ec2.getAmi({
-      owners: ["392319571849"],
+      owners: amiOwnersList,
       mostRecent: true,
     })
   );
@@ -238,7 +252,7 @@ async function main() {
   // Create and launch an Amazon Linux EC2 instance into the public subnet.
   const instance = new aws.ec2.Instance("instance", {
     ami: ami.id,
-    instanceType: "t2.micro",
+    instanceType: instanceType,
     subnetId: publicSubnets[0].id,
     vpcSecurityGroupIds: [applicationSecurityGroup.id],
     keyName: keyName,
@@ -248,3 +262,4 @@ async function main() {
 }
 
 main();
+
