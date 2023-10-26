@@ -60,7 +60,7 @@ async function main() {
         Name: `Public-Subnet_0${index + 1}`,
       },
     },
-    {dependsOn: [vpc]});
+    { dependsOn: [vpc] });
     publicSubnets.push(publicSubnet);
 
     const privateSubnet = new aws.ec2.Subnet(`Private-Subnet_0${index + 1}`, {
@@ -71,7 +71,7 @@ async function main() {
         Name: `Private-Subnet_0${index + 1}`,
       },
     },
-    {dependsOn: [vpc]});
+    { dependsOn: [vpc] });
     privateSubnets.push(privateSubnet);
   });
 
@@ -84,7 +84,7 @@ async function main() {
         Name: `${stackName}_Internet-Gateway`,
       },
     },
-    {dependsOn: [vpc]}
+    { dependsOn: [vpc] }
   );
 
   // Create public and private route tables
@@ -96,7 +96,7 @@ async function main() {
         Name: `${stackName}_Public-Route-Table`,
       },
     },
-    {dependsOn: [vpc]}
+    { dependsOn: [vpc] }
   );
 
   const privateRouteTable = new aws.ec2.RouteTable(
@@ -107,7 +107,7 @@ async function main() {
         Name: `${stackName}_Private-Route-Table`,
       },
     },
-    {dependsOn: [vpc]}
+    { dependsOn: [vpc] }
   );
 
   // Create a route in the public route table to the Internet Gateway
@@ -156,7 +156,7 @@ async function main() {
     tags: {
         Name: "Private Subnets Group",
     },
-});
+  });
 
   // Create a security group allowing inbound access over port 80 and outbound
   // access to anywhere.
@@ -169,7 +169,7 @@ async function main() {
       ],
       ingress: ingressRules,
     },
-    {dependsOn: [vpc]}
+    { dependsOn: [vpc] }
   );
 
   // Create a DB security group
@@ -184,7 +184,7 @@ async function main() {
       ingress: dbIngressRules,
       source_security_group_id: applicationSecurityGroup.id
     },
-    {dependsOn: [vpc, applicationSecurityGroup ]}
+    { dependsOn: [vpc, applicationSecurityGroup] }
   )
 
   // Step 2: Create RDS Parameter Group
@@ -205,7 +205,6 @@ async function main() {
   const dbInstance = new aws.rds.Instance("db-instance", {
     instanceClass: instanceClass, // Use the cheapest one
     allocatedStorage: allocatedStorage,
-    // backupRetentionPeriod: 7,
     dbSubnetGroupName: privateSubnetsGroup.name,
     engine: engine, // Use "postgres" for PostgreSQL
     engineVersion: engineVersion,
@@ -250,7 +249,7 @@ async function main() {
   );
 
   // Create and launch an Amazon Linux EC2 instance into the public subnet.
-  const instance = new aws.ec2.Instance("instance", {
+  const webapp = new aws.ec2.Instance("instance", {
     ami: ami.id,
     instanceType: instanceType,
     subnetId: publicSubnets[0].id,
@@ -262,4 +261,3 @@ async function main() {
 }
 
 main();
-
