@@ -11,7 +11,6 @@ config:
   dbName: csye6225
   dbInstanceIndentifier: csye6225
   dbInstanceUsername: csye6225
-  dbInstancePassword: postgres
   dbParameterGroupFamily: postgres12
   amiOwners: 392319571849
   instanceType: t2.micro
