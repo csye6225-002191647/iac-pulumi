@@ -19,7 +19,7 @@ const amiOwnersString = config.require("amiOwners");
 const instanceType = config.require("instanceType");
 const ENVIRONMENT = config.require("ENVIRONMENT");
 const port = config.require("port");
-const dbInstancePassword= config.require("dbInstancePassword");
+const dbInstancePassword = config.require("dbInstancePassword");
 const stackName = pulumi.getStack();
 
 // Create a new VPC
@@ -51,27 +51,35 @@ async function main() {
   const address = ipAddress.split(".");
 
   availabilityZones.forEach((az, index) => {
-    const publicSubnet = new aws.ec2.Subnet(`Public-Subnet_0${index + 1}`, {
-      vpcId: vpc.id,
-      availabilityZone: az,
-      cidrBlock: `${address[0]}.${address[1]}.${index}.${address[3]}/${subnetMask}`, //ip address should not be hard coded here
-      mapPublicIpOnLaunch: true,
-      tags: {
-        Name: `Public-Subnet_0${index + 1}`,
+    const publicSubnet = new aws.ec2.Subnet(
+      `Public-Subnet_0${index + 1}`,
+      {
+        vpcId: vpc.id,
+        availabilityZone: az,
+        cidrBlock: `${address[0]}.${address[1]}.${index}.${address[3]}/${subnetMask}`, //ip address should not be hard coded here
+        mapPublicIpOnLaunch: true,
+        tags: {
+          Name: `Public-Subnet_0${index + 1}`,
+        },
       },
-    },
-    { dependsOn: [vpc] });
+      { dependsOn: [vpc] }
+    );
     publicSubnets.push(publicSubnet);
 
-    const privateSubnet = new aws.ec2.Subnet(`Private-Subnet_0${index + 1}`, {
-      vpcId: vpc.id,
-      availabilityZone: az,
-      cidrBlock: `${address[0]}.${address[1]}.${index + 3}.${address[3]}/${subnetMask}`,
-      tags: {
-        Name: `Private-Subnet_0${index + 1}`,
+    const privateSubnet = new aws.ec2.Subnet(
+      `Private-Subnet_0${index + 1}`,
+      {
+        vpcId: vpc.id,
+        availabilityZone: az,
+        cidrBlock: `${address[0]}.${address[1]}.${index + 3}.${
+          address[3]
+        }/${subnetMask}`,
+        tags: {
+          Name: `Private-Subnet_0${index + 1}`,
+        },
       },
-    },
-    { dependsOn: [vpc] });
+      { dependsOn: [vpc] }
+    );
     privateSubnets.push(privateSubnet);
   });
 
@@ -111,16 +119,20 @@ async function main() {
   );
 
   // Create a route in the public route table to the Internet Gateway
-  new aws.ec2.Route(`${stackName}_Public-Route`, {
-    routeTableId: publicRouteTable.id,
-    destinationCidrBlock: "0.0.0.0/0",
-    gatewayId: internetGateway.id,
-    tags: {
-      Name: `${stackName}_Public-Route`,
+  new aws.ec2.Route(
+    `${stackName}_Public-Route`,
+    {
+      routeTableId: publicRouteTable.id,
+      destinationCidrBlock: "0.0.0.0/0",
+      gatewayId: internetGateway.id,
+      tags: {
+        Name: `${stackName}_Public-Route`,
+      },
     },
-  }, {
-    dependsOn: [publicRouteTable, internetGateway]
-  });
+    {
+      dependsOn: [publicRouteTable, internetGateway],
+    }
+  );
 
   // Associate public and private subnets with their respective route tables
   publicSubnets.forEach((subnet, index) => {
@@ -133,7 +145,7 @@ async function main() {
           Name: `${stackName}_publicRTAssociation_0${index + 1}`,
         },
       },
-      {dependsOn:[publicRouteTable]}
+      { dependsOn: [publicRouteTable] }
     );
   });
 
@@ -147,14 +159,14 @@ async function main() {
           Name: `${stackName}_privateRTAssociation_0${index + 1}`,
         },
       },
-      {dependsOn:[privateRouteTable]}
+      { dependsOn: [privateRouteTable] }
     );
   });
 
   const privateSubnetsGroup = new aws.rds.SubnetGroup("private_subnets_group", {
     subnetIds: privateSubnets.filter((subnet) => subnet.id),
     tags: {
-        Name: "Private Subnets Group",
+      Name: "Private Subnets Group",
     },
   });
 
@@ -182,10 +194,10 @@ async function main() {
         { fromPort: 0, toPort: 0, protocol: "-1", cidrBlocks: ["0.0.0.0/0"] },
       ],
       ingress: dbIngressRules,
-      source_security_group_id: applicationSecurityGroup.id
+      source_security_group_id: applicationSecurityGroup.id,
     },
     { dependsOn: [vpc, applicationSecurityGroup] }
-  )
+  );
 
   // Step 2: Create RDS Parameter Group
   const dbParameterGroup = new aws.rds.ParameterGroup("db-parameter-group", {
@@ -193,38 +205,52 @@ async function main() {
     parameters: [
       {
         name: "client_encoding",
-        value: "UTF8"
-      }
+        value: "UTF8",
+      },
     ],
   });
 
   // Step 3: Create RDS Instance
   // If you want to specify "Multi-AZ deployment: No" when creating your RDS instance in the Pulumi code,
-  // you can simply omit the availabilityZone and backupRetentionPeriod properties. 
+  // you can simply omit the availabilityZone and backupRetentionPeriod properties.
   // creating the RDS instance with "Multi-AZ deployment: No"
-  const dbInstance = new aws.rds.Instance("db-instance", {
-    instanceClass: instanceClass, // Use the cheapest one
-    allocatedStorage: allocatedStorage,
-    dbSubnetGroupName: privateSubnetsGroup.name,
-    engine: engine, // Use "postgres" for PostgreSQL
-    engineVersion: engineVersion,
-    // name: "postgres", // DB instance Identifier
-    dbName: dbName,
-    identifier: dbInstanceIdentifier,
-    username: dbInstanceUsername,
-    password: dbInstancePassword,
-    skipFinalSnapshot: true,
-    publiclyAccessible: false,
-    vpcSecurityGroupIds: [databaseSecurityGroup.id],
-    parameterGroupName: dbParameterGroup.name,
-    userDataReplaceOnChange: true
-  },
-  {dependsOn: [privateSubnetsGroup, databaseSecurityGroup, dbParameterGroup]});
+  const dbInstance = new aws.rds.Instance(
+    "db-instance",
+    {
+      instanceClass: instanceClass, // Use the cheapest one
+      allocatedStorage: allocatedStorage,
+      dbSubnetGroupName: privateSubnetsGroup.name,
+      engine: engine, // Use "postgres" for PostgreSQL
+      engineVersion: engineVersion,
+      // name: "postgres", // DB instance Identifier
+      dbName: dbName,
+      identifier: dbInstanceIdentifier,
+      username: dbInstanceUsername,
+      password: dbInstancePassword,
+      skipFinalSnapshot: true,
+      publiclyAccessible: false,
+      vpcSecurityGroupIds: [databaseSecurityGroup.id],
+      parameterGroupName: dbParameterGroup.name,
+      userDataReplaceOnChange: true,
+    },
+    {
+      dependsOn: [privateSubnetsGroup, databaseSecurityGroup, dbParameterGroup],
+    }
+  );
 
   // Step 4: User Data
-  const userDataScript = pulumi.all([dbInstance.address, dbInstance.username, dbInstance.password, dbInstance.dbName, dbInstance.port]).apply(
-    values => 
-    `#!/bin/bash
+  const userDataScript = pulumi
+    .all([
+      dbInstance.address,
+      dbInstance.username,
+      dbInstance.password,
+      dbInstance.dbName,
+      dbInstance.port,
+    ])
+    .apply(
+      (values) =>
+        `#!/bin/bash
+    sudo -u csye6225 bash
     cd /opt/csye6225/webapp
     sudo rm -rf .env
     sudo touch .env
@@ -237,10 +263,10 @@ async function main() {
     sudo echo "PORT=${port}">> /opt/csye6225/webapp/.env
     source /opt/csye6225/webapp/.env
     `
-);
+    );
 
   // Find the latest AMI.
-  const amiOwnersList = amiOwnersString.split().map(owner => owner.trim());
+  const amiOwnersList = amiOwnersString.split().map((owner) => owner.trim());
   const ami = pulumi.output(
     aws.ec2.getAmi({
       owners: amiOwnersList,
@@ -249,15 +275,18 @@ async function main() {
   );
 
   // Create and launch an Amazon Linux EC2 instance into the public subnet.
-  const webapp = new aws.ec2.Instance("instance", {
-    ami: ami.id,
-    instanceType: instanceType,
-    subnetId: publicSubnets[0].id,
-    vpcSecurityGroupIds: [applicationSecurityGroup.id],
-    keyName: keyName,
-    userData: userDataScript
-  },
-  {dependsOn: [applicationSecurityGroup]});
+  const webapp = new aws.ec2.Instance(
+    "instance",
+    {
+      ami: ami.id,
+      instanceType: instanceType,
+      subnetId: publicSubnets[0].id,
+      vpcSecurityGroupIds: [applicationSecurityGroup.id],
+      keyName: keyName,
+      userData: userDataScript,
+    },
+    { dependsOn: [applicationSecurityGroup] }
+  );
 }
 
 main();
