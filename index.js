@@ -229,13 +229,13 @@ async function main() {
     cd /opt/csye6225/webapp
     sudo rm -rf .env
     sudo touch .env
-    sudo echo "HOSTNAME=${values[0]}">> /opt/csye6225/webapp.env
-    sudo echo "DBUSER=${values[1]}">> /opt/csye6225/webapp.env
-    sudo echo "DBPASSWORD=${values[2]}">> /opt/csye6225/webapp.env
-    sudo echo "DATABASE=${values[3]}">> /opt/csye6225/webapp.env
-    sudo echo "DBPORT=${values[4]}">> /opt/csye6225/webapp.env
-    sudo echo "ENVIRONMENT=${ENVIRONMENT}">> /opt/csye6225/webapp.env
-    sudo echo "PORT=${port}">> /opt/csye6225/webapp.env
+    sudo echo "HOSTNAME=${values[0]}">> /opt/csye6225/webapp/.env
+    sudo echo "DBUSER=${values[1]}">> /opt/csye6225/webapp/.env
+    sudo echo "DBPASSWORD=${values[2]}">> /opt/csye6225/webapp/.env
+    sudo echo "DATABASE=${values[3]}">> /opt/csye6225/webapp/.env
+    sudo echo "DBPORT=${values[4]}">> /opt/csye6225/webapp/.env
+    sudo echo "ENVIRONMENT=${ENVIRONMENT}">> /opt/csye6225/webapp/.env
+    sudo echo "PORT=${port}">> /opt/csye6225/webapp/.env
     source /opt/csye6225/webapp/.env
     `
 );

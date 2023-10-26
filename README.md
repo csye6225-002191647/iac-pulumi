@@ -143,3 +143,79 @@ Please make sure to modify your Pulumi scripts to meet these requirements for yo
 ```
 
 The updated README.md now includes the additional assignment requirements related to SSH access, testing APIs, pre-installed dependencies, and database and Git configuration. Make sure to adjust your Pulumi scripts accordingly to meet these requirements.
+
+
+# Infrastructure as Code with Pulumi
+
+Welcome to the Infrastructure as Code repository using [Pulumi](https://www.pulumi.com/). Here, you'll find code and guidelines for creating essential infrastructure components to support a database and an EC2 instance for your application. This infrastructure setup involves creating a DB Security Group, RDS Parameter Group, RDS Instance, and EC2 User Data.
+
+## Table of Contents
+
+- [Prerequisites](#prerequisites)
+- [Getting Started](#getting-started)
+  - [Creating the DB Security Group](#create-db-security-group)
+  - [Configuring RDS Parameter Group](#rds-parameter-group)
+  - [Setting Up the RDS Instance](#rds-instance)
+  - [User Data Configuration](#user-data)
+- [Important Note](#warning)
+- [Contribute](#contributing)
+- [License](#license)
+
+## Prerequisites
+
+Before you embark on this journey, ensure you have the following prerequisites in place:
+
+- [Pulumi CLI](https://www.pulumi.com/docs/get-started/install/)
+- Configured AWS credentials
+
+## Getting Started
+
+### Creating the DB Security Group
+
+The DB Security Group is crucial for controlling access to your RDS instance. Here's how to set it up:
+
+1. Navigate to the directory containing your Pulumi code using your terminal.
+2. Open your Pulumi code file (e.g., `index.ts`) and include the logic for creating the DB Security Group.
+3. Ensure the security group allows incoming traffic on port 3306 for MySQL/MariaDB or 5432 for PostgreSQL.
+4. Configure the source of the traffic to be the application's security group.
+5. Be certain that access to the instance from the internet is restricted.
+
+### Configuring RDS Parameter Group
+
+A DB parameter group is essential for configuring engine settings for your RDS instance. Follow these steps:
+
+1. Create a new parameter group that matches your database engine (e.g., Postgres, MySQL, MariaDB) and its version.
+2. Ensure that your RDS instance uses the new parameter group instead of the default parameter group.
+
+### Setting Up the RDS Instance
+
+Your RDS instance should be configured with the following details:
+
+- **Database Engine:** MySQL/MariaDB/PostgreSQL
+- **DB Instance Class:** Use the most cost-effective available instance class.
+- **Multi-AZ Deployment:** No
+- **DB Instance Identifier:** csye6225
+- **Master Username:** csye6225
+- **Master Password:** Choose a strong password
+- **Subnet Group:** Utilize a Private subnet for RDS instances.
+- **Public Accessibility:** No
+- **Database Name:** csye6225
+- Ensure that the Database Security Group is attached to this RDS instance.
+
+### User Data Configuration
+
+The EC2 instance should be launched with user data that provides database configuration to the web application. To achieve this:
+
+1. In your Pulumi code for the EC2 instance, add user data to pass database configuration information, such as the username, password, and hostname, to the web application.
+
+## Important Note
+
+Be cautious with the "Public Accessibility" setting of your RDS instance. Setting it to true will expose your instance to the internet. Make sure to set it to "No" unless you have specific use cases that require public access.
+
+## Contribute
+
+You are encouraged to contribute to this repository by opening issues or pull requests. Your contributions are highly valued and appreciated.
+
+## License
+
+This project is licensed under the [MIT License](LICENSE).
