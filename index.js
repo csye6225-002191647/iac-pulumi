@@ -331,7 +331,7 @@ async function main() {
   //Create a Route53 A record pointing to the EC2 instance's public IP.
   const aRecord = new aws.route53.Record(`${domainName}`, {
     zoneId: hostedZone.zoneId,
-    name: domainName,``
+    name: domainName,
     type: "A",
     records: [instanceIPv4],
     ttl: 60, // Adjust TTL as needed.
