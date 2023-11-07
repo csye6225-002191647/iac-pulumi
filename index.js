@@ -20,6 +20,7 @@ const instanceType = config.require("instanceType");
 const ENVIRONMENT = config.require("ENVIRONMENT");
 const port = config.require("port");
 const dbInstancePassword = config.require("dbInstancePassword");
+const domainName = config.require("domainName");
 const stackName = pulumi.getStack();
 
 // Create a new VPC
@@ -252,6 +253,16 @@ async function main() {
         `#!/bin/bash
     sudo -u csye6225 bash
     cd /opt/csye6225/webapp
+
+    sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl \
+    -a fetch-config \
+    -m ec2 \
+    -c file:/opt/csye6225/webapp/app/config/cloudwatch.config.json \
+    -s
+
+    sudo systemctl enable amazon-cloudwatch-agent
+    sudo systemctl start amazon-cloudwatch-agent
+
     sudo rm -rf .env
     sudo touch .env
     sudo echo "HOSTNAME=${values[0]}">> /opt/csye6225/webapp/.env
@@ -274,8 +285,33 @@ async function main() {
     })
   );
 
+  // Create an IAM role for use with CloudWatch Agent
+  const cloudWatchAgentRole = new aws.iam.Role('CloudWatchAgentRole', {
+    assumeRolePolicy: JSON.stringify({
+        Version: '2012-10-17',
+        Statement: [{
+            Action: 'sts:AssumeRole',
+            Effect: 'Allow',
+            Principal: {
+                Service: 'ec2.amazonaws.com',
+            },
+        }],
+    }),
+  });
+
+  // Attach the CloudWatchAgentServerPolicy to the IAM role
+  const cloudWatchAgentPolicyAttachment = new aws.iam.PolicyAttachment('CloudWatchAgentPolicyAttachment', {
+    policyArn: "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy",
+    roles: [cloudWatchAgentRole.name],
+  });
+
+    // Create an instance profile and attach the IAM role.
+  const instanceProfile = new aws.iam.InstanceProfile("myInstanceProfile", {
+    role: cloudWatchAgentRole.name,
+  });
+
   // Create and launch an Amazon Linux EC2 instance into the public subnet.
-  const webapp = new aws.ec2.Instance(
+  const instance = new aws.ec2.Instance(
     "instance",
     {
       ami: ami.id,
@@ -283,9 +319,24 @@ async function main() {
       subnetId: publicSubnets[0].id,
       vpcSecurityGroupIds: [applicationSecurityGroup.id],
       keyName: keyName,
+      iamInstanceProfile: instanceProfile.name,
       userData: userDataScript,
     },
     { dependsOn: [applicationSecurityGroup] }
+  );
+
+  const hostedZone = await aws.route53.getZone({ name: domainName });
+  const instanceIPv4 = instance.publicIp;
+
+  //Create a Route53 A record pointing to the EC2 instance's public IP.
+  const aRecord = new aws.route53.Record(`${domainName}`, {
+    zoneId: hostedZone.zoneId,
+    name: domainName,``
+    type: "A",
+    records: [instanceIPv4],
+    ttl: 60, // Adjust TTL as needed.
+    allowOverwrite: true
+  },  { dependsOn: [instance] }
   );
 }
 
