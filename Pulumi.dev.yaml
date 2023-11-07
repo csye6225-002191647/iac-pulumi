@@ -1,8 +1,8 @@
 config:
   aws:profile: dev
-  aws:region: us-west-2
+  aws:region: us-east-1
   cidrBlock: 10.0.0.0/16
-  keyName: dev_csye6225_us-west-2
+  keyName: dev_csye6225_us-east-1
   subnetMask: 24
   instanceClass: db.t2.micro
   allocatedStorage: 20
@@ -17,6 +17,7 @@ config:
   instanceType: t2.micro
   ENVIRONMENT: DEV
   port: 8080
+  domainName: dev.rohitchouhan.me
 
   ingressRules:
     - protocol: "tcp"
