@@ -7,6 +7,7 @@ const keyName = config.require("keyName");
 const subnetMask = config.require("subnetMask");
 const ingressRules = config.getObject("ingressRules");
 const dbIngressRules = config.getObject("dbIngressRules");
+const lbIngressRules = config.getObject("lbIngressRules");
 const instanceClass = config.require("instanceClass");
 const engine = config.require("engine");
 const allocatedStorage = config.require("allocatedStorage");
@@ -171,6 +172,19 @@ async function main() {
     },
   });
 
+  //LoadBalancer security group
+  const loadBalancerSecurityGroup = new aws.ec2.SecurityGroup(
+    "loadBalancerSecurityGroup",
+    {
+      vpcId: vpc.id,
+      egress: [
+        { fromPort: 0, toPort: 0, protocol: "-1", cidrBlocks: ["0.0.0.0/0"] },
+      ],
+      ingress: lbIngressRules,
+    },
+    { dependsOn: [vpc] }
+  );
+
   // Create a security group allowing inbound access over port 80 and outbound
   // access to anywhere.
   const applicationSecurityGroup = new aws.ec2.SecurityGroup(
@@ -181,6 +195,7 @@ async function main() {
         { fromPort: 0, toPort: 0, protocol: "-1", cidrBlocks: ["0.0.0.0/0"] },
       ],
       ingress: ingressRules,
+      securityGroups: [loadBalancerSecurityGroup.id],
     },
     { dependsOn: [vpc] }
   );
@@ -286,58 +301,146 @@ async function main() {
   );
 
   // Create an IAM role for use with CloudWatch Agent
-  const cloudWatchAgentRole = new aws.iam.Role('CloudWatchAgentRole', {
+  const cloudWatchAgentRole = new aws.iam.Role("CloudWatchAgentRole", {
     assumeRolePolicy: JSON.stringify({
-        Version: '2012-10-17',
-        Statement: [{
-            Action: 'sts:AssumeRole',
-            Effect: 'Allow',
-            Principal: {
-                Service: 'ec2.amazonaws.com',
-            },
-        }],
+      Version: "2012-10-17",
+      Statement: [
+        {
+          Action: "sts:AssumeRole",
+          Effect: "Allow",
+          Principal: {
+            Service: "ec2.amazonaws.com",
+          },
+        },
+      ],
     }),
   });
 
   // Attach the CloudWatchAgentServerPolicy to the IAM role
-  const cloudWatchAgentPolicyAttachment = new aws.iam.PolicyAttachment('CloudWatchAgentPolicyAttachment', {
-    policyArn: "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy",
-    roles: [cloudWatchAgentRole.name],
-  });
+  const cloudWatchAgentPolicyAttachment = new aws.iam.PolicyAttachment(
+    "CloudWatchAgentPolicyAttachment",
+    {
+      policyArn: "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy",
+      roles: [cloudWatchAgentRole.name],
+    }
+  );
 
-    // Create an instance profile and attach the IAM role.
+  // Create an instance profile and attach the IAM role.
   const instanceProfile = new aws.iam.InstanceProfile("myInstanceProfile", {
     role: cloudWatchAgentRole.name,
   });
 
   // Create and launch an Amazon Linux EC2 instance into the public subnet.
-  const instance = new aws.ec2.Instance(
-    "instance",
-    {
-      ami: ami.id,
-      instanceType: instanceType,
-      subnetId: publicSubnets[0].id,
-      vpcSecurityGroupIds: [applicationSecurityGroup.id],
-      keyName: keyName,
-      iamInstanceProfile: instanceProfile.name,
-      userData: userDataScript,
+  // const instance = new aws.ec2.Instance(
+  //   "instance",
+  //   {
+  //     ami: ami.id,
+  //     instanceType: instanceType,
+  //     subnetId: publicSubnets[0].id,
+  //     vpcSecurityGroupIds: [applicationSecurityGroup.id],
+  //     keyName: keyName,
+  //     iamInstanceProfile: instanceProfile.name,
+  //     userData: userDataScript,
+  //   },
+  //   { dependsOn: [applicationSecurityGroup] }
+  // );
+
+  // Create Launch Template
+  const launchTemplate = new aws.ec2.LaunchTemplate("webAppLaunchTemplate", {
+    imageId: ami.id,
+    instanceType: instanceType,
+    //subnetId: publicSubnets[0].id, //check with the instruction and grading guidelines
+    keyName: keyName,
+    userData: Buffer.from(userDataScript, "binary").toString("base64"),
+    iamInstanceProfile: {
+      name: instanceProfile.name,
     },
-    { dependsOn: [applicationSecurityGroup] }
+    // networkInterfaces:[
+    //   {deviceIndex: 0},
+    //   {networkCardIndex: 0},
+    //   {associatePublicIpAddress: true},
+    //   {securityGroups: [applicationSecurityGroup.id]}
+    // ],
+    vpcSecurityGroupIds: [applicationSecurityGroup.id],
+  });
+
+  // Create Auto Scaling Group
+  const autoScalingGroup = new aws.autoscaling.Group("webAppAutoScalingGroup", {
+    desiredCapacity: 1,
+    maxSize: 3,
+    minSize: 1,
+    vpcZoneIdentifiers: [publicSubnets[0].id], // specify your subnet IDs
+    launchTemplate: {
+      id: launchTemplate.id,
+      version: "$Latest",
+    },
+    tags: [
+      {
+        key: "Name",
+        propagateAtLaunch: true,
+        value: "instance",
+      },
+    ],
+    cooldown: 60,
+  });
+
+  const scaleUpPolicy = new aws.autoscaling.Policy(
+    "webAppScaleUpPolicy",
+    {
+      scalingAdjustment: 1,
+      adjustmentType: "ChangeInCapacity",
+      cooldown: 60,
+      autoscalingGroupName: autoScalingGroup.name,
+    },
+    { dependsOn: [autoScalingGroup] }
   );
 
-  const hostedZone = await aws.route53.getZone({ name: domainName });
-  const instanceIPv4 = instance.publicIp;
-
-  //Create a Route53 A record pointing to the EC2 instance's public IP.
-  const aRecord = new aws.route53.Record(`${domainName}`, {
-    zoneId: hostedZone.zoneId,
-    name: domainName,
-    type: "A",
-    records: [instanceIPv4],
-    ttl: 60, // Adjust TTL as needed.
-    allowOverwrite: true
-  },  { dependsOn: [instance] }
+  const scaleDownPolicy = new aws.autoscaling.Policy(
+    "webAppScaleDownPolicy",
+    {
+      scalingAdjustment: -1,
+      adjustmentType: "ChangeInCapacity",
+      cooldown: 60,
+      autoscalingGroupName: autoScalingGroup.name,
+    },
+    { dependsOn: [autoScalingGroup] }
   );
+
+  const scaleUpAlarm = new aws.cloudwatch.MetricAlarm("scaleUpAlarm", {
+    comparisonOperator: "GreaterThanThreshold",
+    evaluationPeriods: 2,
+    metricName: "CPUUtilization",
+    namespace: "AWS/EC2",
+    statistic: "Average",
+    period: 300,
+    threshold: 5,
+    alarmActions: [scaleUpPolicy.arn],
+  });
+
+  const scaleDownAlarm = new aws.cloudwatch.MetricAlarm("scaleDownAlarm", {
+    comparisonOperator: "LessThanThreshold",
+    evaluationPeriods: 2,
+    metricName: "CPUUtilization",
+    namespace: "AWS/EC2",
+    statistic: "Average",
+    period: 300,
+    threshold: 3,
+    alarmActions: [scaleDownPolicy.arn],
+  });
+
+  // const hostedZone = await aws.route53.getZone({ name: domainName });
+  // const instanceIPv4 = instance.publicIp;
+
+  // //Create a Route53 A record pointing to the EC2 instance's public IP.
+  // const aRecord = new aws.route53.Record(`${domainName}`, {
+  //   zoneId: hostedZone.zoneId,
+  //   name: domainName,
+  //   type: "A",
+  //   records: [instanceIPv4],
+  //   ttl: 60, // Adjust TTL as needed.
+  //   allowOverwrite: true
+  // }, { dependsOn: [instance] }
+  // );
 }
 
 main();
