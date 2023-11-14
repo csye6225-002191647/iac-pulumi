@@ -1,5 +1,6 @@
 const pulumi = require("@pulumi/pulumi");
 const aws = require("@pulumi/aws");
+const { Ipv4 } = require("@pulumi/aws/alb");
 const config = new pulumi.Config();
 
 const cidrBlock = config.require("cidrBlock");
@@ -73,9 +74,8 @@ async function main() {
       {
         vpcId: vpc.id,
         availabilityZone: az,
-        cidrBlock: `${address[0]}.${address[1]}.${index + 3}.${
-          address[3]
-        }/${subnetMask}`,
+        cidrBlock: `${address[0]}.${address[1]}.${index + 3}.${address[3]
+          }/${subnetMask}`,
         tags: {
           Name: `Private-Subnet_0${index + 1}`,
         },
@@ -184,9 +184,7 @@ async function main() {
     },
     { dependsOn: [vpc] }
   );
-
-  // Create a security group allowing inbound access over port 80 and outbound
-  // access to anywhere.
+  //applicationSecurityGroup
   const applicationSecurityGroup = new aws.ec2.SecurityGroup(
     "appSecurityGroup",
     {
@@ -194,10 +192,26 @@ async function main() {
       egress: [
         { fromPort: 0, toPort: 0, protocol: "-1", cidrBlocks: ["0.0.0.0/0"] },
       ],
-      ingress: ingressRules,
-      securityGroups: [loadBalancerSecurityGroup.id],
+       ingress: ingressRules
+      // ingress:
+      //   [{
+      //     protocol: "tcp",
+      //     fromPort: 22,
+      //     toPort: 22,
+      //     cidrBlocks:
+      //       ["0.0.0.0/0"],
+      //     securityGroups: [loadBalancerSecurityGroup.id]
+      //   },
+      //   {
+      //     protocol: "tcp",
+      //     fromPort: 8080,
+      //     toPort: 8080,
+      //     cidrBlocks:
+      //       ["0.0.0.0/0"],
+      //     securityGroups: [loadBalancerSecurityGroup.id]
+      //   }]
     },
-    { dependsOn: [vpc] }
+    { dependsOn: [vpc, loadBalancerSecurityGroup] }
   );
 
   // Create a DB security group
@@ -322,46 +336,47 @@ async function main() {
     {
       policyArn: "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy",
       roles: [cloudWatchAgentRole.name],
-    }
+    },
+    { dependsOn: [cloudWatchAgentRole] }
   );
 
   // Create an instance profile and attach the IAM role.
   const instanceProfile = new aws.iam.InstanceProfile("myInstanceProfile", {
     role: cloudWatchAgentRole.name,
-  });
-
-  // Create and launch an Amazon Linux EC2 instance into the public subnet.
-  // const instance = new aws.ec2.Instance(
-  //   "instance",
-  //   {
-  //     ami: ami.id,
-  //     instanceType: instanceType,
-  //     subnetId: publicSubnets[0].id,
-  //     vpcSecurityGroupIds: [applicationSecurityGroup.id],
-  //     keyName: keyName,
-  //     iamInstanceProfile: instanceProfile.name,
-  //     userData: userDataScript,
-  //   },
-  //   { dependsOn: [applicationSecurityGroup] }
-  // );
+  },
+    { dependsOn: [cloudWatchAgentRole] }
+  );
 
   // Create Launch Template
   const launchTemplate = new aws.ec2.LaunchTemplate("webAppLaunchTemplate", {
     imageId: ami.id,
     instanceType: instanceType,
-    //subnetId: publicSubnets[0].id, //check with the instruction and grading guidelines
+    //subnets: publicSubnets.map((subnet) => subnet.id), //check with the instruction and grading guidelines
     keyName: keyName,
-    userData: Buffer.from(userDataScript, "binary").toString("base64"),
+    userData: userDataScript.apply(script => Buffer.from(script).toString("base64")),
     iamInstanceProfile: {
       name: instanceProfile.name,
     },
-    // networkInterfaces:[
-    //   {deviceIndex: 0},
-    //   {networkCardIndex: 0},
-    //   {associatePublicIpAddress: true},
-    //   {securityGroups: [applicationSecurityGroup.id]}
-    // ],
-    vpcSecurityGroupIds: [applicationSecurityGroup.id],
+    networkInterfaces: [{
+      associatePublicIpAddress: true,
+      securityGroups: [applicationSecurityGroup.id],
+      deleteOnTermination: true
+    }],
+  },
+    { dependsOn: [applicationSecurityGroup, instanceProfile] }
+  );
+
+  const targetGroup = new aws.lb.TargetGroup(`${stackName}-target-group`, {
+    port: port,
+    protocol: "HTTP",
+    targetType: "instance",
+    vpcId: vpc.id,
+    ipAddressType: "ipv4",
+    associatePublicIpAddress: true,
+    healthCheck: {
+      path: "/healthz",
+      port: port,
+    }
   });
 
   // Create Auto Scaling Group
@@ -382,7 +397,49 @@ async function main() {
       },
     ],
     cooldown: 60,
-  });
+    targetGroupArns: [targetGroup.arn],
+  },
+    { dependsOn: [publicSubnets, targetGroup, launchTemplate] });
+
+  const alb = new aws.lb.LoadBalancer(`${stackName}-alb`, {
+    internal: false, // Set to true for internal ALB
+    ipAddressType: "ipv4",
+    loadBalancerType: "application",
+    securityGroups: [loadBalancerSecurityGroup.id],
+    subnets: publicSubnets.map((subnet) => subnet.id),
+    enableDeletionProtection: false,
+  },
+    { dependsOn: [loadBalancerSecurityGroup, publicSubnets] });
+
+  const albListener = new aws.lb.Listener(`${stackName}-alb-listener`, {
+    loadBalancerArn: alb.arn,
+    port: 80,
+    protocol: "HTTP",
+    defaultActions: [
+      {
+        type: "forward",
+        targetGroupArn: targetGroup.arn,
+      },
+    ],
+  },
+  { dependsOn: [alb, targetGroup] });
+
+  const hostedZone = await aws.route53.getZone({ name: domainName });
+
+  // Create an A record pointing to the ALB DNS name
+  const aRecord = new aws.route53.Record(`${domainName}`, {
+    zoneId: hostedZone.zoneId,
+    name: domainName,
+    type: "A",
+    aliases: [
+      {
+        evaluateTargetHealth: true,
+        name: alb.dnsName,
+        zoneId: alb.zoneId,
+      },
+    ],
+  },
+    { dependsOn: [alb] });
 
   const scaleUpPolicy = new aws.autoscaling.Policy(
     "webAppScaleUpPolicy",
@@ -415,7 +472,7 @@ async function main() {
     period: 300,
     threshold: 5,
     alarmActions: [scaleUpPolicy.arn],
-  });
+  }, { dependsOn: [scaleUpPolicy] });
 
   const scaleDownAlarm = new aws.cloudwatch.MetricAlarm("scaleDownAlarm", {
     comparisonOperator: "LessThanThreshold",
@@ -426,21 +483,7 @@ async function main() {
     period: 300,
     threshold: 3,
     alarmActions: [scaleDownPolicy.arn],
-  });
-
-  // const hostedZone = await aws.route53.getZone({ name: domainName });
-  // const instanceIPv4 = instance.publicIp;
-
-  // //Create a Route53 A record pointing to the EC2 instance's public IP.
-  // const aRecord = new aws.route53.Record(`${domainName}`, {
-  //   zoneId: hostedZone.zoneId,
-  //   name: domainName,
-  //   type: "A",
-  //   records: [instanceIPv4],
-  //   ttl: 60, // Adjust TTL as needed.
-  //   allowOverwrite: true
-  // }, { dependsOn: [instance] }
-  // );
+  }, { dependsOn: [scaleDownPolicy] });
 }
 
 main();
