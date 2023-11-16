@@ -1,12 +1,10 @@
 const pulumi = require("@pulumi/pulumi");
 const aws = require("@pulumi/aws");
-const { Ipv4 } = require("@pulumi/aws/alb");
 const config = new pulumi.Config();
 
 const cidrBlock = config.require("cidrBlock");
 const keyName = config.require("keyName");
 const subnetMask = config.require("subnetMask");
-const ingressRules = config.getObject("ingressRules");
 const dbIngressRules = config.getObject("dbIngressRules");
 const lbIngressRules = config.getObject("lbIngressRules");
 const instanceClass = config.require("instanceClass");
@@ -74,8 +72,9 @@ async function main() {
       {
         vpcId: vpc.id,
         availabilityZone: az,
-        cidrBlock: `${address[0]}.${address[1]}.${index + 3}.${address[3]
-          }/${subnetMask}`,
+        cidrBlock: `${address[0]}.${address[1]}.${index + 3}.${
+          address[3]
+        }/${subnetMask}`,
         tags: {
           Name: `Private-Subnet_0${index + 1}`,
         },
@@ -192,24 +191,10 @@ async function main() {
       egress: [
         { fromPort: 0, toPort: 0, protocol: "-1", cidrBlocks: ["0.0.0.0/0"] },
       ],
-       ingress: ingressRules
-      // ingress:
-      //   [{
-      //     protocol: "tcp",
-      //     fromPort: 22,
-      //     toPort: 22,
-      //     cidrBlocks:
-      //       ["0.0.0.0/0"],
-      //     securityGroups: [loadBalancerSecurityGroup.id]
-      //   },
-      //   {
-      //     protocol: "tcp",
-      //     fromPort: 8080,
-      //     toPort: 8080,
-      //     cidrBlocks:
-      //       ["0.0.0.0/0"],
-      //     securityGroups: [loadBalancerSecurityGroup.id]
-      //   }]
+      ingress: [
+        { fromPort: 22, toPort: 22, protocol: "tcp", cidrBlocks: ["0.0.0.0/0"] },
+        { fromPort: 8080, toPort: 8080, protocol: "tcp", securityGroups: [loadBalancerSecurityGroup.id]},
+      ],
     },
     { dependsOn: [vpc, loadBalancerSecurityGroup] }
   );
@@ -286,7 +271,7 @@ async function main() {
     sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl \
     -a fetch-config \
     -m ec2 \
-    -c file:/opt/csye6225/webapp/app/config/cloudwatch.config.json \
+    -c file:/opt/csye6225/webapp/cloudwatch.config.json \
     -s
 
     sudo systemctl enable amazon-cloudwatch-agent
@@ -341,29 +326,70 @@ async function main() {
   );
 
   // Create an instance profile and attach the IAM role.
-  const instanceProfile = new aws.iam.InstanceProfile("myInstanceProfile", {
-    role: cloudWatchAgentRole.name,
-  },
+  const instanceProfile = new aws.iam.InstanceProfile(
+    "myInstanceProfile",
+    {
+      role: cloudWatchAgentRole.name,
+    },
     { dependsOn: [cloudWatchAgentRole] }
   );
 
   // Create Launch Template
-  const launchTemplate = new aws.ec2.LaunchTemplate("webAppLaunchTemplate", {
-    imageId: ami.id,
-    instanceType: instanceType,
-    //subnets: publicSubnets.map((subnet) => subnet.id), //check with the instruction and grading guidelines
-    keyName: keyName,
-    userData: userDataScript.apply(script => Buffer.from(script).toString("base64")),
-    iamInstanceProfile: {
-      name: instanceProfile.name,
+  const launchTemplate = new aws.ec2.LaunchTemplate(
+    "webAppLaunchTemplate",
+    {
+      imageId: ami.id,
+      instanceType: instanceType,
+      keyName: keyName,
+      disableApiTermination: false,
+      iamInstanceProfile: {
+        name: instanceProfile.name,
+      },
+      blockDeviceMappings: [
+        {
+          deviceName: "/dev/xvda",
+          ebs: {
+            deleteOnTermination: true,
+            volumeSize: 25,
+            volumeType: "gp2",
+          },
+        },
+      ],
+      tagSpecifications: [
+        {
+          resourceType: "instance",
+          tags: {
+            Name: "asg_launch_config",
+          },
+        },
+      ],
+      networkInterfaces: [
+        {
+          associatePublicIpAddress: true,
+          securityGroups: [applicationSecurityGroup.id],
+          deleteOnTermination: true,
+        },
+      ],
+      userData: userDataScript.apply((script) =>
+        Buffer.from(script).toString("base64")
+      ),
     },
-    networkInterfaces: [{
-      associatePublicIpAddress: true,
-      securityGroups: [applicationSecurityGroup.id],
-      deleteOnTermination: true
-    }],
-  },
-    { dependsOn: [applicationSecurityGroup, instanceProfile] }
+    { dependsOn: [applicationSecurityGroup, instanceProfile, dbInstance] }
+  );
+
+  const publicSubnetIds = publicSubnets.map((subnet) => subnet.id)  
+
+  const alb = new aws.lb.LoadBalancer(
+    `${stackName}-alb`,
+    {
+      internal: false, // Set to true for internal ALB
+      ipAddressType: "ipv4",
+      loadBalancerType: "application",
+      securityGroups: [loadBalancerSecurityGroup.id],
+      subnets: publicSubnetIds,
+      enableDeletionProtection: false,
+    },
+    { dependsOn: [loadBalancerSecurityGroup, publicSubnets] }
   );
 
   const targetGroup = new aws.lb.TargetGroup(`${stackName}-target-group`, {
@@ -374,17 +400,42 @@ async function main() {
     ipAddressType: "ipv4",
     associatePublicIpAddress: true,
     healthCheck: {
+      enabled: true,
       path: "/healthz",
       port: port,
-    }
+      healthyThreshold: 2,
+      unhealthyThreshold: 2,
+      timeout: 6,
+      interval: 30,
+    },
   });
 
-  // Create Auto Scaling Group
-  const autoScalingGroup = new aws.autoscaling.Group("webAppAutoScalingGroup", {
+  const albListener = new aws.lb.Listener(
+    `${stackName}-alb-listener`,
+    {
+      loadBalancerArn: alb.arn,
+      port: 80,
+      protocol: "HTTP",
+      defaultActions: [
+        {
+          type: "forward",
+          targetGroupArn: targetGroup.arn,
+        },
+      ],
+    },
+    { dependsOn: [alb, targetGroup] }
+  );
+
+// Create Auto Scaling Group
+const autoScalingGroup = new aws.autoscaling.Group(
+  "webAppAutoScalingGroup",
+  {
     desiredCapacity: 1,
     maxSize: 3,
     minSize: 1,
-    vpcZoneIdentifiers: [publicSubnets[0].id], // specify your subnet IDs
+    forceDelete: true,
+    vpcZoneIdentifiers: publicSubnetIds, // Make sure this is set correctly
+    instanceProfile: instanceProfile.name,
     launchTemplate: {
       id: launchTemplate.id,
       version: "$Latest",
@@ -396,50 +447,11 @@ async function main() {
         value: "instance",
       },
     ],
-    cooldown: 60,
+    defaultCooldown: 60, // Set an appropriate cooldown period (e.g., 5 minutes)
     targetGroupArns: [targetGroup.arn],
   },
-    { dependsOn: [publicSubnets, targetGroup, launchTemplate] });
-
-  const alb = new aws.lb.LoadBalancer(`${stackName}-alb`, {
-    internal: false, // Set to true for internal ALB
-    ipAddressType: "ipv4",
-    loadBalancerType: "application",
-    securityGroups: [loadBalancerSecurityGroup.id],
-    subnets: publicSubnets.map((subnet) => subnet.id),
-    enableDeletionProtection: false,
-  },
-    { dependsOn: [loadBalancerSecurityGroup, publicSubnets] });
-
-  const albListener = new aws.lb.Listener(`${stackName}-alb-listener`, {
-    loadBalancerArn: alb.arn,
-    port: 80,
-    protocol: "HTTP",
-    defaultActions: [
-      {
-        type: "forward",
-        targetGroupArn: targetGroup.arn,
-      },
-    ],
-  },
-  { dependsOn: [alb, targetGroup] });
-
-  const hostedZone = await aws.route53.getZone({ name: domainName });
-
-  // Create an A record pointing to the ALB DNS name
-  const aRecord = new aws.route53.Record(`${domainName}`, {
-    zoneId: hostedZone.zoneId,
-    name: domainName,
-    type: "A",
-    aliases: [
-      {
-        evaluateTargetHealth: true,
-        name: alb.dnsName,
-        zoneId: alb.zoneId,
-      },
-    ],
-  },
-    { dependsOn: [alb] });
+  { dependsOn: [publicSubnets, targetGroup, launchTemplate] }
+);
 
   const scaleUpPolicy = new aws.autoscaling.Policy(
     "webAppScaleUpPolicy",
@@ -448,6 +460,9 @@ async function main() {
       adjustmentType: "ChangeInCapacity",
       cooldown: 60,
       autoscalingGroupName: autoScalingGroup.name,
+      autocreationCooldown: 60,
+      policyType: "SimpleScaling",
+      scalingTargetId: autoScalingGroup.id,
     },
     { dependsOn: [autoScalingGroup] }
   );
@@ -459,31 +474,65 @@ async function main() {
       adjustmentType: "ChangeInCapacity",
       cooldown: 60,
       autoscalingGroupName: autoScalingGroup.name,
+      autocreationCooldown: 60,
+      policyType: "SimpleScaling",
+      scalingTargetId: autoScalingGroup.id,
     },
     { dependsOn: [autoScalingGroup] }
   );
 
-  const scaleUpAlarm = new aws.cloudwatch.MetricAlarm("scaleUpAlarm", {
+// Create CloudWatch Alarms
+const cpuUtilizationAlarmHigh = new aws.cloudwatch.MetricAlarm(
+  "cpuUtilizationAlarmHigh",
+  {
     comparisonOperator: "GreaterThanThreshold",
-    evaluationPeriods: 2,
+    evaluationPeriods: 1,
     metricName: "CPUUtilization",
     namespace: "AWS/EC2",
-    statistic: "Average",
-    period: 300,
+    period: 60,
     threshold: 5,
+    statistic: "Average",
     alarmActions: [scaleUpPolicy.arn],
-  }, { dependsOn: [scaleUpPolicy] });
+    dimensions: { AutoScalingGroupName: autoScalingGroup.name }, // Correct dimensions
+  },
+  { dependsOn: [scaleUpPolicy] }
+);
 
-  const scaleDownAlarm = new aws.cloudwatch.MetricAlarm("scaleDownAlarm", {
+const cpuUtilizationAlarmLow = new aws.cloudwatch.MetricAlarm(
+  "cpuUtilizationAlarmLow",
+  {
     comparisonOperator: "LessThanThreshold",
-    evaluationPeriods: 2,
+    evaluationPeriods: 1,
     metricName: "CPUUtilization",
     namespace: "AWS/EC2",
+    period: 60,
     statistic: "Average",
-    period: 300,
     threshold: 3,
     alarmActions: [scaleDownPolicy.arn],
-  }, { dependsOn: [scaleDownPolicy] });
+    dimensions: { AutoScalingGroupName: autoScalingGroup.name }, // Correct dimensions
+  },
+  { dependsOn: [scaleDownPolicy] }
+);
+
+  const hostedZone = await aws.route53.getZone({ name: domainName });
+
+  // Create an A record pointing to the ALB DNS name
+  const aRecord = new aws.route53.Record(
+    `${domainName}`,
+    {
+      zoneId: hostedZone.zoneId,
+      name: domainName,
+      type: "A",
+      aliases: [
+        {
+          evaluateTargetHealth: true,
+          name: alb.dnsName,
+          zoneId: alb.zoneId,
+        },
+      ],
+    },
+    { dependsOn: [alb] }
+  );
 }
 
 main();
