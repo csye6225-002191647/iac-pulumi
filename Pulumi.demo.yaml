@@ -1,0 +1,39 @@
+config:
+  aws:profile: demo
+  aws:region: us-east-1
+  cidrBlock: 10.0.0.0/16
+  keyName: demo_csye6225_us-east-1
+  subnetMask: 24
+  instanceClass: db.t2.micro
+  allocatedStorage: 20
+  engine: postgres
+  engineVersion: 12
+  dbName: csye6225
+  dbInstanceIndentifier: csye6225
+  dbInstanceUsername: csye6225
+  dbInstancePassword: postgres
+  dbParameterGroupFamily: postgres12
+  amiOwners: 392319571849
+  instanceType: t2.micro
+  ENVIRONMENT: DEMO
+  port: 8080
+  domainName: demo.rohitchouhan.me
+
+  dbIngressRules:
+    - protocol: "tcp"
+      fromPort: 5432
+      toPort: 5432
+      cidrBlocks:
+        - "0.0.0.0/0"   
+  lbIngressRules:
+    - protocol: "tcp"
+      fromPort: 80
+      toPort: 80
+      cidrBlocks:
+        - "0.0.0.0/0"
+    - protocol: "tcp"
+      fromPort: 443
+      toPort: 443
+      cidrBlocks:
+        - "0.0.0.0/0"   
+

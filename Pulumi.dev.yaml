@@ -18,18 +18,7 @@ config:
   ENVIRONMENT: DEV
   port: 8080
   domainName: dev.rohitchouhan.me
-
-  ingressRules:
-    - protocol: "tcp"
-      fromPort: 22
-      toPort: 22
-      cidrBlocks:
-        - "0.0.0.0/0"
-    - protocol: "tcp"
-      fromPort: 8080
-      toPort: 8080
-      cidrBlocks:
-        - "0.0.0.0/0"
+      
   dbIngressRules:
     - protocol: "tcp"
       fromPort: 5432
