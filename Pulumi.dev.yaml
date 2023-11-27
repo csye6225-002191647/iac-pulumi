@@ -1,39 +1,41 @@
 config:
   aws:profile: dev
   aws:region: us-east-1
-  cidrBlock: 10.0.0.0/16
-  keyName: dev_csye6225_us-east-1
-  subnetMask: 24
-  instanceClass: db.t2.micro
-  allocatedStorage: 20
-  engine: postgres
-  engineVersion: 12
-  dbName: csye6225
-  dbInstanceIndentifier: csye6225
-  dbInstanceUsername: csye6225
-  dbInstancePassword: postgres
-  dbParameterGroupFamily: postgres12
-  amiOwners: 392319571849
-  instanceType: t2.micro
   ENVIRONMENT: DEV
-  port: 8080
-  domainName: dev.rohitchouhan.me
-      
+  allocatedStorage: "20"
+  amiOwners: "392319571849"
+  bucketName: csye_6225_dev_002191647
+  cidrBlock: 10.0.0.0/16
   dbIngressRules:
-    - protocol: "tcp"
+    - cidrBlocks:
+        - 0.0.0.0/0
       fromPort: 5432
+      protocol: tcp
       toPort: 5432
-      cidrBlocks:
-        - "0.0.0.0/0"   
-  lbIngressRules:
-    - protocol: "tcp"
-      fromPort: 80
-      toPort: 80
-      cidrBlocks:
-        - "0.0.0.0/0"
-    - protocol: "tcp"
-      fromPort: 443
-      toPort: 443
-      cidrBlocks:
-        - "0.0.0.0/0"   
+  dbInstanceIndentifier: csye6225
+  dbInstancePassword: postgres
+  dbInstanceUsername: csye6225
+  dbName: csye6225
+  dbParameterGroupFamily: postgres12
+  domainName: dev.rohitchouhan.me
+  engine: postgres
+  engineVersion: "12"
+  instanceClass: db.t2.micro
+  instanceType: t2.micro
+  keyName: dev_csye6225_us-east-1
 
+  gcp:project: dev-csye6225-406220
+
+  lbIngressRules:
+    - cidrBlocks:
+        - 0.0.0.0/0
+      fromPort: 80
+      protocol: tcp
+      toPort: 80
+    - cidrBlocks:
+        - 0.0.0.0/0
+      fromPort: 443
+      protocol: tcp
+      toPort: 443
+  port: "8080"
+  subnetMask: "24"

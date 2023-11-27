@@ -1,7 +1,10 @@
 const pulumi = require("@pulumi/pulumi");
 const aws = require("@pulumi/aws");
+const gcp = require("@pulumi/gcp");
+
 const config = new pulumi.Config();
 
+const bucketName = config.require("bucketName");
 const cidrBlock = config.require("cidrBlock");
 const keyName = config.require("keyName");
 const subnetMask = config.require("subnetMask");
@@ -72,9 +75,8 @@ async function main() {
       {
         vpcId: vpc.id,
         availabilityZone: az,
-        cidrBlock: `${address[0]}.${address[1]}.${index + 3}.${
-          address[3]
-        }/${subnetMask}`,
+        cidrBlock: `${address[0]}.${address[1]}.${index + 3}.${address[3]
+          }/${subnetMask}`,
         tags: {
           Name: `Private-Subnet_0${index + 1}`,
         },
@@ -193,7 +195,7 @@ async function main() {
       ],
       ingress: [
         { fromPort: 22, toPort: 22, protocol: "tcp", cidrBlocks: ["0.0.0.0/0"] },
-        { fromPort: 8080, toPort: 8080, protocol: "tcp", securityGroups: [loadBalancerSecurityGroup.id]},
+        { fromPort: 8080, toPort: 8080, protocol: "tcp", securityGroups: [loadBalancerSecurityGroup.id] },
       ],
     },
     { dependsOn: [vpc, loadBalancerSecurityGroup] }
@@ -377,7 +379,7 @@ async function main() {
     { dependsOn: [applicationSecurityGroup, instanceProfile, dbInstance] }
   );
 
-  const publicSubnetIds = publicSubnets.map((subnet) => subnet.id)  
+  const publicSubnetIds = publicSubnets.map((subnet) => subnet.id)
 
   const alb = new aws.lb.LoadBalancer(
     `${stackName}-alb`,
@@ -426,32 +428,32 @@ async function main() {
     { dependsOn: [alb, targetGroup] }
   );
 
-// Create Auto Scaling Group
-const autoScalingGroup = new aws.autoscaling.Group(
-  "webAppAutoScalingGroup",
-  {
-    desiredCapacity: 1,
-    maxSize: 3,
-    minSize: 1,
-    forceDelete: true,
-    vpcZoneIdentifiers: publicSubnetIds, // Make sure this is set correctly
-    instanceProfile: instanceProfile.name,
-    launchTemplate: {
-      id: launchTemplate.id,
-      version: "$Latest",
-    },
-    tags: [
-      {
-        key: "Name",
-        propagateAtLaunch: true,
-        value: "instance",
+  // Create Auto Scaling Group
+  const autoScalingGroup = new aws.autoscaling.Group(
+    "webAppAutoScalingGroup",
+    {
+      desiredCapacity: 1,
+      maxSize: 3,
+      minSize: 1,
+      forceDelete: true,
+      vpcZoneIdentifiers: publicSubnetIds, // Make sure this is set correctly
+      instanceProfile: instanceProfile.name,
+      launchTemplate: {
+        id: launchTemplate.id,
+        version: "$Latest",
       },
-    ],
-    defaultCooldown: 60, // Set an appropriate cooldown period (e.g., 5 minutes)
-    targetGroupArns: [targetGroup.arn],
-  },
-  { dependsOn: [publicSubnets, targetGroup, launchTemplate] }
-);
+      tags: [
+        {
+          key: "Name",
+          propagateAtLaunch: true,
+          value: "instance",
+        },
+      ],
+      defaultCooldown: 60, // Set an appropriate cooldown period (e.g., 5 minutes)
+      targetGroupArns: [targetGroup.arn],
+    },
+    { dependsOn: [publicSubnets, targetGroup, launchTemplate] }
+  );
 
   const scaleUpPolicy = new aws.autoscaling.Policy(
     "webAppScaleUpPolicy",
@@ -481,38 +483,38 @@ const autoScalingGroup = new aws.autoscaling.Group(
     { dependsOn: [autoScalingGroup] }
   );
 
-// Create CloudWatch Alarms
-const cpuUtilizationAlarmHigh = new aws.cloudwatch.MetricAlarm(
-  "cpuUtilizationAlarmHigh",
-  {
-    comparisonOperator: "GreaterThanThreshold",
-    evaluationPeriods: 1,
-    metricName: "CPUUtilization",
-    namespace: "AWS/EC2",
-    period: 60,
-    threshold: 5,
-    statistic: "Average",
-    alarmActions: [scaleUpPolicy.arn],
-    dimensions: { AutoScalingGroupName: autoScalingGroup.name }, // Correct dimensions
-  },
-  { dependsOn: [scaleUpPolicy] }
-);
+  // Create CloudWatch Alarms
+  const cpuUtilizationAlarmHigh = new aws.cloudwatch.MetricAlarm(
+    "cpuUtilizationAlarmHigh",
+    {
+      comparisonOperator: "GreaterThanThreshold",
+      evaluationPeriods: 1,
+      metricName: "CPUUtilization",
+      namespace: "AWS/EC2",
+      period: 60,
+      threshold: 5,
+      statistic: "Average",
+      alarmActions: [scaleUpPolicy.arn],
+      dimensions: { AutoScalingGroupName: autoScalingGroup.name }, // Correct dimensions
+    },
+    { dependsOn: [scaleUpPolicy] }
+  );
 
-const cpuUtilizationAlarmLow = new aws.cloudwatch.MetricAlarm(
-  "cpuUtilizationAlarmLow",
-  {
-    comparisonOperator: "LessThanThreshold",
-    evaluationPeriods: 1,
-    metricName: "CPUUtilization",
-    namespace: "AWS/EC2",
-    period: 60,
-    statistic: "Average",
-    threshold: 3,
-    alarmActions: [scaleDownPolicy.arn],
-    dimensions: { AutoScalingGroupName: autoScalingGroup.name }, // Correct dimensions
-  },
-  { dependsOn: [scaleDownPolicy] }
-);
+  const cpuUtilizationAlarmLow = new aws.cloudwatch.MetricAlarm(
+    "cpuUtilizationAlarmLow",
+    {
+      comparisonOperator: "LessThanThreshold",
+      evaluationPeriods: 1,
+      metricName: "CPUUtilization",
+      namespace: "AWS/EC2",
+      period: 60,
+      statistic: "Average",
+      threshold: 3,
+      alarmActions: [scaleDownPolicy.arn],
+      dimensions: { AutoScalingGroupName: autoScalingGroup.name }, // Correct dimensions
+    },
+    { dependsOn: [scaleDownPolicy] }
+  );
 
   const hostedZone = await aws.route53.getZone({ name: domainName });
 
@@ -533,6 +535,122 @@ const cpuUtilizationAlarmLow = new aws.cloudwatch.MetricAlarm(
     },
     { dependsOn: [alb] }
   );
+
+  // Create an SNS topic
+  const snsTopic = new aws.sns.Topic("submissionUpdate", {
+    tags: {
+      Name: "submissionUpdate",
+    },
+  });
+
+   // Create DynamoDB table
+   const dynamoDBTable = new aws.dynamodb.Table("lambda-dynamodb-table", {
+    name: "dynamoDBTable",
+    attributes: [
+        { name: "messageId", type: "S" },
+    ],
+    hashKey: "messageId",
+    readCapacity: 5,
+    writeCapacity: 5,
+  });
+
+   // get GCP Storage Bucket
+   const bucket = gcp.storage.getBucket({
+    name: bucketName,
+  });
+
+  // Create GCP Service Account
+  const serviceAccount = new gcp.serviceaccount.Account("serviceAccount", {
+    accountId: "my-service-account",
+    displayName: "A service account that only Rohit can use",
+  });
+
+  // IAM Binding for GCS Bucket
+  const adminAccountIam = new gcp.storage.BucketIAMBinding("bucketAccess", {
+    bucket: bucketName,
+    role: "roles/storage.objectAdmin",
+    members: [pulumi.interpolate`serviceAccount:${serviceAccount.email}`],
+  });
+
+  // Create access keys for the service account
+  const serviceAccountKey = new gcp.serviceaccount.Key("my-service-account-key", {
+    serviceAccountId: serviceAccount.name
+  });
+
+  // IAM Role and Policies for Lambda Function
+  const lambdaRole = new aws.iam.Role("lambda-execution-role", {
+    assumeRolePolicy: aws.iam.assumeRolePolicyForPrincipal({ Service: "lambda.amazonaws.com" }),
+  });
+
+  const lambdaPolicy = new aws.iam.Policy("lambda-policy", {
+    policy: {
+      Version: "2012-10-17",
+      Statement: [
+        {
+          Effect: "Allow",
+          Action: ["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents", "lambda:InvokeFunction"],
+          Resource: "arn:aws:logs:*:*:*",
+        },
+        {
+          Effect: "Allow",
+          Action: [
+            "dynamodb:PutItem",
+            "dynamodb:GetItem",
+            "dynamodb:Query", // Add other necessary actions
+          ],
+          Resource: dynamoDBTable.arn,
+        },
+      ],
+    },
+  });
+
+  // Attach policies to the role
+  const lambdaRolePolicyAttachment = new aws.iam.RolePolicyAttachment(
+    "lambda-role-policy-attachment",
+    {
+      policyArn: lambdaPolicy.arn,
+      role: lambdaRole.name,
+    }
+  );
+  
+  // Create AWS Lambda function
+  const lambda = new aws.lambda.Function("github-release-lambda", {
+    runtime: aws.lambda.Runtime.NodeJS18dX,
+    code: new pulumi.asset.AssetArchive({
+      ".": new pulumi.asset.FileArchive("../serverless/serverless.zip"),
+    }),
+    role: lambdaRole.arn,
+    handler: "index.handler",
+    environment: {
+      variables: {
+            GCP_BUCKET_NAME: bucketName,
+            GCP_SERVICE_ACCOUNT_KEY: serviceAccountKey.privateKey, // is base64encoded decode it
+            MAILGUN_API_KEY: '6e2c6ad89910e12d7ecb43f247125567-30b58138-127db4c5',
+            // EMAIL_SERVER_USERNAME: "your-email-username",
+            // EMAIL_SERVER_PASSWORD: "your-email-password"
+            // SERVICE_ACCOUNT_EMAIL: serviceAccount.email,
+            // GCP_PROJECT_ID: 'dev-csye6225',
+            DYNAMODB_TABLE_NAME: dynamoDBTable.name,
+            DOMAIN_NAME: 'rohitchouhan.me'
+      },
+    },
+    timeout: 60,
+  });
+
+  // Grant Lambda permission to invoke from SNS
+  const lambdaSnsPermission = new aws.lambda.Permission("lambda-sns-permission", {
+    action: "lambda:InvokeFunction",
+    function: lambda.name,
+    principal: "sns.amazonaws.com",
+    sourceArn: snsTopic.arn,
+  });
+
+  // subscribe to sns from lamda
+  const lamdaSnsSubscription = new aws.sns.TopicSubscription("lamdaSnsSubscription", {
+    endpoint: lambda.arn,
+    protocol: "lambda",
+    topic: snsTopic.arn,
+  });
 }
 
 main();
