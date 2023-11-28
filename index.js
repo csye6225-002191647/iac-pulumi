@@ -5,6 +5,9 @@ const gcp = require("@pulumi/gcp");
 const config = new pulumi.Config();
 
 const bucketName = config.require("bucketName");
+const gcpRegion = config.require("gcpRegion");
+const MAILGUN_API_KEY = config.require("MAILGUN_API_KEY");
+const emailDomainName = config.require("emailDomainName");
 const cidrBlock = config.require("cidrBlock");
 const keyName = config.require("keyName");
 const subnetMask = config.require("subnetMask");
@@ -255,6 +258,13 @@ async function main() {
     }
   );
 
+  // Create an SNS topic
+  const snsTopic = new aws.sns.Topic("submissionUpdate", {
+    tags: {
+      Name: "submissionUpdate",
+    },
+  });
+
   // Step 4: User Data
   const userDataScript = pulumi
     .all([
@@ -288,6 +298,7 @@ async function main() {
     sudo echo "DBPORT=${values[4]}">> /opt/csye6225/webapp/.env
     sudo echo "ENVIRONMENT=${ENVIRONMENT}">> /opt/csye6225/webapp/.env
     sudo echo "PORT=${port}">> /opt/csye6225/webapp/.env
+    sudo echo "SNSTOPICARN=${snsTopic.arn}">> /opt/csye6225/webapp/.env
     source /opt/csye6225/webapp/.env
     `
     );
@@ -536,13 +547,6 @@ async function main() {
     { dependsOn: [alb] }
   );
 
-  // Create an SNS topic
-  const snsTopic = new aws.sns.Topic("submissionUpdate", {
-    tags: {
-      Name: "submissionUpdate",
-    },
-  });
-
    // Create DynamoDB table
    const dynamoDBTable = new aws.dynamodb.Table("lambda-dynamodb-table", {
     name: "dynamoDBTable",
@@ -554,9 +558,41 @@ async function main() {
     writeCapacity: 5,
   });
 
-   // get GCP Storage Bucket
-   const bucket = gcp.storage.getBucket({
-    name: bucketName,
+  // Create the Google Cloud Storage Bucket
+  const bucket = new gcp.storage.Bucket(bucketName, {
+    location: gcpRegion,
+    uniformBucketLevelAccess: true,
+    forceDestroy: true,
+    versioning: {
+      enabled: true
+    },
+    lifecycleRules: [
+      {
+        action: {
+          type: 'AbortIncompleteMultipartUpload'
+        },
+        condition: {
+          age: 3,
+        },
+      },
+      {
+        action: {
+          type: 'Delete'
+        },
+        condition: {
+          age: 7,
+        },
+      },
+      {
+        action: {
+          type: 'Delete'
+        },
+        condition: {
+          numNewerVersions: 3,
+          withState: 'ARCHIVED'
+        },
+      },
+    ]
   });
 
   // Create GCP Service Account
@@ -567,7 +603,7 @@ async function main() {
 
   // IAM Binding for GCS Bucket
   const adminAccountIam = new gcp.storage.BucketIAMBinding("bucketAccess", {
-    bucket: bucketName,
+    bucket: bucket.name,
     role: "roles/storage.objectAdmin",
     members: [pulumi.interpolate`serviceAccount:${serviceAccount.email}`],
   });
@@ -623,15 +659,15 @@ async function main() {
     handler: "index.handler",
     environment: {
       variables: {
-            GCP_BUCKET_NAME: bucketName,
+            GCP_BUCKET_NAME: bucket.name,
             GCP_SERVICE_ACCOUNT_KEY: serviceAccountKey.privateKey, // is base64encoded decode it
-            MAILGUN_API_KEY: '6e2c6ad89910e12d7ecb43f247125567-30b58138-127db4c5',
+            MAILGUN_API_KEY: MAILGUN_API_KEY,
             // EMAIL_SERVER_USERNAME: "your-email-username",
             // EMAIL_SERVER_PASSWORD: "your-email-password"
             // SERVICE_ACCOUNT_EMAIL: serviceAccount.email,
             // GCP_PROJECT_ID: 'dev-csye6225',
             DYNAMODB_TABLE_NAME: dynamoDBTable.name,
-            DOMAIN_NAME: 'rohitchouhan.me'
+            DOMAIN_NAME: emailDomainName
       },
     },
     timeout: 60,
