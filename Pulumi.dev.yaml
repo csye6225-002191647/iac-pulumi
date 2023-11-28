@@ -1,6 +1,9 @@
 config:
   aws:profile: dev
   aws:region: us-east-1
+  gcp:region: us-east1
+  gcpRegion: us-east1 
+  MAILGUN_API_KEY: 6e2c6ad89910e12d7ecb43f247125567-30b58138-127db4c5
   ENVIRONMENT: DEV
   allocatedStorage: "20"
   amiOwners: "392319571849"
@@ -18,6 +21,7 @@ config:
   dbName: csye6225
   dbParameterGroupFamily: postgres12
   domainName: dev.rohitchouhan.me
+  emailDomainName: rohitchouhan.me
   engine: postgres
   engineVersion: "12"
   instanceClass: db.t2.micro
