@@ -1,11 +1,12 @@
 const pulumi = require("@pulumi/pulumi");
 const aws = require("@pulumi/aws");
 const gcp = require("@pulumi/gcp");
+const awsConfig = new pulumi.Config('aws');
+const gcpConfig = new pulumi.Config('gcp');
 
 const config = new pulumi.Config();
 
 const bucketName = config.require("bucketName");
-const gcpRegion = config.require("gcpRegion");
 const MAILGUN_API_KEY = config.require("MAILGUN_API_KEY");
 const emailDomainName = config.require("emailDomainName");
 const cidrBlock = config.require("cidrBlock");
@@ -276,7 +277,7 @@ async function main() {
     ])
     .apply(
       (values) =>
-        `#!/bin/bash
+        pulumi.interpolate`#!/bin/bash
     sudo -u csye6225 bash
     cd /opt/csye6225/webapp
 
@@ -299,6 +300,7 @@ async function main() {
     sudo echo "ENVIRONMENT=${ENVIRONMENT}">> /opt/csye6225/webapp/.env
     sudo echo "PORT=${port}">> /opt/csye6225/webapp/.env
     sudo echo "SNSTOPICARN=${snsTopic.arn}">> /opt/csye6225/webapp/.env
+    sudo echo "AWS_REGION=${awsConfig.require('region')}">> /opt/csye6225/webapp/.env
     source /opt/csye6225/webapp/.env
     `
     );
@@ -336,6 +338,31 @@ async function main() {
       roles: [cloudWatchAgentRole.name],
     },
     { dependsOn: [cloudWatchAgentRole] }
+  );
+
+  const snsPublishPolicy = new aws.iam.Policy("SNSPublishPolicy", {
+    policy: {
+      Version: "2012-10-17",
+      Statement: [
+        {
+          Effect: "Allow",
+          Action: "sns:Publish",
+          Resource: snsTopic.arn,
+        },
+      ],
+    },
+    roles: [cloudWatchAgentRole.name],
+    },
+    {dependsOn: [cloudWatchAgentRole, snsTopic]}
+  );
+
+  const snsPublishPolicyAttachment = new aws.iam.RolePolicyAttachment(
+    "SNSPublishPolicyAttachment",
+    {
+      role: cloudWatchAgentRole.name,
+      policyArn: snsPublishPolicy.arn,
+    },
+    {dependsOn: [cloudWatchAgentRole, snsPublishPolicy]}
   );
 
   // Create an instance profile and attach the IAM role.
@@ -560,12 +587,9 @@ async function main() {
 
   // Create the Google Cloud Storage Bucket
   const bucket = new gcp.storage.Bucket(bucketName, {
-    location: gcpRegion,
+    location: gcpConfig.require('region'),
     uniformBucketLevelAccess: true,
     forceDestroy: true,
-    versioning: {
-      enabled: true
-    },
     lifecycleRules: [
       {
         action: {
@@ -632,7 +656,7 @@ async function main() {
           Action: [
             "dynamodb:PutItem",
             "dynamodb:GetItem",
-            "dynamodb:Query", // Add other necessary actions
+            "dynamodb:Query",
           ],
           Resource: dynamoDBTable.arn,
         },
@@ -662,12 +686,8 @@ async function main() {
             GCP_BUCKET_NAME: bucket.name,
             GCP_SERVICE_ACCOUNT_KEY: serviceAccountKey.privateKey, // is base64encoded decode it
             MAILGUN_API_KEY: MAILGUN_API_KEY,
-            // EMAIL_SERVER_USERNAME: "your-email-username",
-            // EMAIL_SERVER_PASSWORD: "your-email-password"
-            // SERVICE_ACCOUNT_EMAIL: serviceAccount.email,
-            // GCP_PROJECT_ID: 'dev-csye6225',
             DYNAMODB_TABLE_NAME: dynamoDBTable.name,
-            DOMAIN_NAME: emailDomainName
+            MAILGUN_DOMAIN_NAME: emailDomainName
       },
     },
     timeout: 60,

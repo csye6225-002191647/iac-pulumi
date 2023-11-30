@@ -2,7 +2,7 @@ config:
   aws:profile: dev
   aws:region: us-east-1
   gcp:region: us-east1
-  gcpRegion: us-east1 
+  gcp:project: dev-csye6225-406220
   MAILGUN_API_KEY: 6e2c6ad89910e12d7ecb43f247125567-30b58138-127db4c5
   ENVIRONMENT: DEV
   allocatedStorage: "20"
@@ -27,8 +27,6 @@ config:
   instanceClass: db.t2.micro
   instanceType: t2.micro
   keyName: dev_csye6225_us-east-1
-
-  gcp:project: dev-csye6225-406220
 
   lbIngressRules:
     - cidrBlocks:
