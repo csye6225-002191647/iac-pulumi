@@ -1,0 +1,39 @@
+config:
+  aws:profile: demo
+  aws:region: us-east-1
+  gcp:region: us-east1
+  gcp:project: arched-canyon-406220
+  MAILGUN_API_KEY: 6e2c6ad89910e12d7ecb43f247125567-30b58138-127db4c5
+  ENVIRONMENT: DEMO
+  allocatedStorage: "20"
+  amiOwners: "392319571849"
+  bucketName: csye_6225_demo_002191647
+  cidrBlock: 10.0.0.0/16
+  dbIngressRules:
+    - cidrBlocks:
+        - 0.0.0.0/0
+      fromPort: 5432
+      protocol: tcp
+      toPort: 5432
+  dbInstanceIndentifier: csye6225
+  dbInstancePassword: postgres
+  dbInstanceUsername: csye6225
+  dbName: csye6225
+  dbParameterGroupFamily: postgres12
+  domainName: demo.rohitchouhan.me
+  emailDomainName: demo.rohitchouhan.me
+  engine: postgres
+  engineVersion: "12"
+  instanceClass: db.t2.micro
+  instanceType: t2.micro
+  keyName: demo_csye6225_us-east-1
+
+  lbIngressRules:
+    - cidrBlocks:
+        - 0.0.0.0/0
+      fromPort: 443
+      protocol: tcp
+      toPort: 443
+  port: "8080"
+  subnetMask: "24"
+

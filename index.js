@@ -385,6 +385,10 @@ async function main() {
       iamInstanceProfile: {
         name: instanceProfile.name,
       },
+      tags: {
+        Name: "asg_launch_config",
+      },
+      updateDefaultVersion:true,
       blockDeviceMappings: [
         {
           deviceName: "/dev/xvda",
@@ -398,9 +402,12 @@ async function main() {
       tagSpecifications: [
         {
           resourceType: "instance",
-          tags: {
-            Name: "asg_launch_config",
-          },
+          tags: [
+            {
+                "Key": "Name",
+                "Value": "asg_launch_config"
+            }
+          ]
         },
       ],
       networkInterfaces: [
@@ -416,6 +423,11 @@ async function main() {
     },
     { dependsOn: [applicationSecurityGroup, instanceProfile, dbInstance] }
   );
+
+  const certificateArn = aws.acm.getCertificate({
+    domain: domainName,
+    mostRecent: true,
+  });
 
   const publicSubnetIds = publicSubnets.map((subnet) => subnet.id)
 
@@ -454,8 +466,10 @@ async function main() {
     `${stackName}-alb-listener`,
     {
       loadBalancerArn: alb.arn,
-      port: 80,
-      protocol: "HTTP",
+      port: 443,
+      protocol: "HTTPS",
+      certificateArn: (await certificateArn).arn,
+      sslPolicy: "ELBSecurityPolicy-2016-08",
       defaultActions: [
         {
           type: "forward",
